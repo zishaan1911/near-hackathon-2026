@@ -1,0 +1,17 @@
+# GASX NEAR background services: oracle publisher, order matcher and the
+# liquidity seeder, all shipped from the blockchain/near package.
+#
+# Build context is the repo root. The default command runs the publisher;
+# docker-compose overrides it for the matcher.
+
+FROM node:20-bookworm-slim
+
+WORKDIR /app/blockchain/near
+
+COPY blockchain/near/package.json blockchain/near/package-lock.json ./
+RUN npm ci
+
+COPY blockchain/near/ ./
+RUN npm run build
+
+CMD ["npx", "tsx", "src/publisher.ts"]
