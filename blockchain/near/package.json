@@ -1,0 +1,23 @@
+{
+  "name": "@gasx/near-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GASX's NEAR adapter: reads the market/oracle from the gasx contract and prepares (never signs) wallet transactions. Also hosts the oracle publisher and order matcher services.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "publisher": "tsx src/publisher.ts",
+    "matcher": "tsx src/matcher.ts",
+    "seed": "tsx src/seedLiquidity.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "near-api-js": "^7.4.0"
+  }
+}
