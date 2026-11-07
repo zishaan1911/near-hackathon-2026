@@ -27,8 +27,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            blockchain/thetanuts/package-lock.json
-            blockchain/sui/package-lock.json
+            blockchain/near/package-lock.json
             engine/binding/package-lock.json
             api/package-lock.json
 
@@ -89,26 +88,16 @@ jobs:
       - name: Run Python tests
         run: bash scripts/test-all.sh python
 
-  move:
-    name: Move tests
+  contracts:
+    name: NEAR contract tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Sui toolchain manager
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/MystenLabs/suiup/main/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Sui CLI
-        run: suiup install sui@testnet --yes
-
-      - name: Show Sui version
-        run: sui --version
-
-      - name: Run Move tests
-        run: bash scripts/test-all.sh move
+      - name: Run contract tests
+        run: bash scripts/test-all.sh contracts

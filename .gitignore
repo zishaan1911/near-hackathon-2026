@@ -32,9 +32,8 @@ CMakeCache.txt
 cmake-build-*/
 engine/build/
 
-# Move / Sui
-contracts/**/build/
-.sui/
+# Rust / NEAR
+target/
 
 # AI — trained model artifacts (regenerate with `python -m inference.train`;
 # see ai/README.md). Never commit a trained model as if it were reviewed,

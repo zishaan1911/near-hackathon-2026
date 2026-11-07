@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Runs all test suites, or one selected suite:
-#   - contracts/gasx         (Sui Move)
+#   - contracts/near          (Rust, cargo test)
 #   - engine                  (C++)
 #   - ai                      (Python)
-#   - blockchain/thetanuts    (TypeScript)
-#   - blockchain/sui          (TypeScript)
+#   - blockchain/near         (TypeScript)
 #   - api                      (TypeScript)
 #   - frontend                 (TypeScript)
 #
@@ -15,15 +14,14 @@
 #   ./scripts/test-all.sh frontend
 #   ./scripts/test-all.sh python
 #   ./scripts/test-all.sh cpp
-#   ./scripts/test-all.sh move
+#   ./scripts/test-all.sh contracts
 #
-# Requires: sui CLI on PATH, cmake + a C++17 compiler, either an
+# Requires: cargo (Rust), cmake + a C++17 compiler, either an
 # ai/venv (see ai/README.md) or pytest importable via `python3 -m
 # pytest`, and Node.js >= 18 + npm for the TypeScript stacks.
 #
-# api/ depends on blockchain/thetanuts and blockchain/sui being built
-# first (their dist/ must exist), so the TypeScript suite builds them
-# in that order.
+# api/ depends on blockchain/near being built first (its dist/ must
+# exist), so the TypeScript suite builds it first.
 
 set -uo pipefail
 
@@ -32,11 +30,11 @@ SELECTED_SUITE="${1:-all}"
 FAILED=0
 
 usage() {
-  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|python|cpp|move]"
+  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|python|cpp|contracts]"
 }
 
 case "$SELECTED_SUITE" in
-  all|typescript|frontend|python|cpp|move)
+  all|typescript|frontend|python|cpp|contracts)
     ;;
   *)
     echo "Unknown test suite: $SELECTED_SUITE"
@@ -45,23 +43,24 @@ case "$SELECTED_SUITE" in
     ;;
 esac
 
-run_move() {
-  echo
-  echo "==> contracts/gasx (Sui Move)"
-
-  if command -v sui >/dev/null 2>&1; then
-    if (cd "$REPO_ROOT/contracts/gasx" && sui move test); then
-      echo "-- Move tests passed"
-      return 0
+run_contracts() {
+  local failed=0
+  local crate
+  for crate in contracts/near/gasx contracts/near/mock-ft; do
+    echo
+    echo "==> $crate (Rust)"
+    if ! command -v cargo >/dev/null 2>&1; then
+      echo "!! cargo not found on PATH — skipping contract tests"
+      return 1
     fi
-
-    echo "!! Move tests FAILED"
-    return 1
-  fi
-
-  echo "!! sui CLI not found on PATH — skipping Move tests"
-  echo "   (see contracts/gasx/README.md for build/test instructions)"
-  return 1
+    if (cd "$REPO_ROOT/$crate" && cargo test); then
+      echo "-- $crate tests passed"
+    else
+      echo "!! $crate tests FAILED"
+      failed=1
+    fi
+  done
+  return "$failed"
 }
 
 run_cpp() {
@@ -191,17 +190,10 @@ run_typescript() {
     return 1
   fi
 
-  # Build both adapters first because the API imports their dist output.
+  # Build the adapter first because the API imports its dist output.
   if ! run_ts_project \
-    "blockchain/thetanuts" \
-    "Thetanuts adapter" \
-    "true"; then
-    typescript_failed=1
-  fi
-
-  if ! run_ts_project \
-    "blockchain/sui" \
-    "Sui adapter" \
+    "blockchain/near" \
+    "NEAR adapter" \
     "true"; then
     typescript_failed=1
   fi
@@ -242,14 +234,14 @@ run_and_record() {
 
 case "$SELECTED_SUITE" in
   all)
-    run_and_record run_move
+    run_and_record run_contracts
     run_and_record run_cpp
     run_and_record run_python
     run_and_record run_typescript
     run_and_record run_frontend
     ;;
-  move)
-    run_and_record run_move
+  contracts)
+    run_and_record run_contracts
     ;;
   cpp)
     run_and_record run_cpp
