@@ -295,6 +295,39 @@ impl Contract {
         id
     }
 
+    /// Owner or publisher: start the next market with the *same* parameters as
+    /// the current (settled) one, expiring at `expiry_ms`. Lets the oracle
+    /// service roll hourly markets without holding the owner key; it cannot
+    /// change any market parameter.
+    pub fn roll_market(&mut self, expiry_ms: u64) -> u64 {
+        let caller = env::predecessor_account_id();
+        require!(caller == self.owner_id || caller == self.publisher, "owner or publisher only");
+        require!(self.current_market_id != 0, "no market to roll");
+        let current = self.market(self.current_market_id);
+        require!(current.settled, "current market has not settled");
+        require!(expiry_ms > env::block_timestamp_ms(), "expiry must be in the future");
+        self.current_market_id += 1;
+        let id = self.current_market_id;
+        self.markets.insert(
+            id,
+            Market {
+                underlying: current.underlying.clone(),
+                expiry_ms,
+                contract_multiplier: current.contract_multiplier,
+                tick_size: current.tick_size,
+                margin_ratio_bps: current.margin_ratio_bps,
+                paused: false,
+                settled: false,
+                settlement_price: 0,
+            },
+        );
+        events::emit(
+            "market_created",
+            json!({ "market_id": id, "underlying": current.underlying, "expiry_ms": expiry_ms }),
+        );
+        id
+    }
+
     pub fn pause(&mut self) {
         self.assert_owner();
         self.set_paused(true);

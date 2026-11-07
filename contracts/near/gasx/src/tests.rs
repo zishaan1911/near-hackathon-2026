@@ -342,6 +342,37 @@ fn next_market_after_settlement_keeps_old_claims_working() {
 }
 
 #[test]
+fn publisher_rolls_the_next_market_with_same_parameters() {
+    let mut c = setup();
+    settle_at(&mut c, 310);
+    set("pub.near", T0_MS + HOUR_MS + 30);
+    let next = c.roll_market(T0_MS + 2 * HOUR_MS);
+    assert_eq!(next, 2);
+    let m = c.get_market(None).unwrap();
+    assert_eq!((m.market_id, m.contract_multiplier, m.tick_size, m.margin_ratio_bps), (2, MULT, 1, 1_000));
+    assert!(!m.settled);
+    assert_eq!(m.expiry_ms, T0_MS + 2 * HOUR_MS);
+    assert_eq!(c.get_market(Some(1)).unwrap().settlement_price, Some(310));
+}
+
+#[test]
+#[should_panic(expected = "owner or publisher only")]
+fn strangers_cannot_roll_markets() {
+    let mut c = setup();
+    settle_at(&mut c, 310);
+    set("alice.near", T0_MS + HOUR_MS + 30);
+    c.roll_market(T0_MS + 2 * HOUR_MS);
+}
+
+#[test]
+#[should_panic(expected = "current market has not settled")]
+fn cannot_roll_before_settlement() {
+    let mut c = setup();
+    set("pub.near", T0_MS + 5);
+    c.roll_market(T0_MS + 2 * HOUR_MS);
+}
+
+#[test]
 #[should_panic(expected = "current market has not settled")]
 fn cannot_create_market_before_current_settles() {
     let mut c = setup();
