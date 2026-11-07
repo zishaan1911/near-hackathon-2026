@@ -1,7 +1,8 @@
 /**
- * MySQL access for the API gateway — the only service that talks to the
- * database (ARCHITECTURE.md §2: the gateway owns "indexing", and Storage
- * holds "durable state; live EGSI/orderbook cached in API memory").
+ * Postgres (Supabase) access for the API gateway — the only service that
+ * talks to the database (ARCHITECTURE.md §2: the gateway owns "indexing",
+ * and Storage holds "durable state; live EGSI/orderbook cached in API
+ * memory").
  *
  * Two deliberate design points:
  *
@@ -17,10 +18,10 @@
  *    configured, `createDatabase` returns null and the gateway runs
  *    exactly as before, just without durable state. That keeps the
  *    dev-market path (blockchain/near's devMarket.ts) working with no
- *    MySQL install at all.
+ *    Postgres at all.
  */
-import mysql from 'mysql2/promise';
-import type { Pool } from 'mysql2/promise';
+import postgres from 'postgres';
+import type { Sql } from 'postgres';
 
 export interface EgsiSnapshotRow {
   market: string;
@@ -86,9 +87,60 @@ export interface Database {
 
 type Logger = { error: (msg: string) => void };
 
-export class MysqlDatabase implements Database {
+type RawRow = Record<string, unknown>;
+
+/** Clamps a caller-supplied limit to an integer in [1, max]. */
+export function clampLimit(limit: number, max: number): number {
+  if (!Number.isFinite(limit)) return 1;
+  return Math.max(1, Math.min(max, Math.trunc(limit)));
+}
+
+/** Candle bucket width in whole seconds, at least 1. */
+export function clampInterval(intervalSeconds: number): number {
+  if (!Number.isFinite(intervalSeconds)) return 1;
+  return Math.max(1, Math.trunc(intervalSeconds));
+}
+
+/** Start (unix seconds) of the bucket a timestamp falls in. Mirrors the
+ * SQL bucketing so the two can be checked against each other. */
+export function bucketStart(timestampSeconds: number, intervalSeconds: number): number {
+  return Math.floor(timestampSeconds / intervalSeconds) * intervalSeconds;
+}
+
+/** Postgres returns numeric and bigint as strings; the app's types are
+ * numbers, so the conversion lives here in one place. */
+export function mapSnapshotRow(r: RawRow): EgsiSnapshotRow {
+  return {
+    market: String(r.market),
+    score: Number(r.score),
+    blockNumber: Number(r.block_number),
+    blockTimestamp: Number(r.block_timestamp),
+    baseFee: Number(r.base_fee),
+    utilization: Number(r.utilization),
+    mempoolPressure: Number(r.mempool_pressure),
+    feeMomentum: Number(r.fee_momentum),
+    gasVolatility: Number(r.gas_volatility),
+    dexActivity: Number(r.dex_activity),
+    thetanutsIv: r.thetanuts_iv === null || r.thetanuts_iv === undefined ? null : Number(r.thetanuts_iv),
+    thetanutsSkew:
+      r.thetanuts_skew === null || r.thetanuts_skew === undefined ? null : Number(r.thetanuts_skew),
+  };
+}
+
+export function mapCandleRow(r: RawRow): Candle {
+  return {
+    time: Number(r.time),
+    open: Number(r.open),
+    high: Number(r.high),
+    low: Number(r.low),
+    close: Number(r.close),
+    samples: Number(r.samples),
+  };
+}
+
+export class PostgresDatabase implements Database {
   constructor(
-    private readonly pool: Pool,
+    private readonly sql: Sql,
     private readonly log: Logger,
   ) {}
 
@@ -97,33 +149,24 @@ export class MysqlDatabase implements Database {
    * rather than lost). */
   async recordEgsiSnapshot(row: EgsiSnapshotRow): Promise<number | null> {
     try {
-      // ON DUPLICATE KEY: the gateway polls faster than the AI service
+      // ON CONFLICT: the gateway polls faster than the AI service
       // produces new blocks, so re-seeing the same block is the normal
       // case, not an error. Touching score keeps the row current if a
-      // recomputation changed it.
-      const [result] = await this.pool.execute(
-        `INSERT INTO egsi_snapshot
-           (market, score, block_number, block_timestamp, base_fee, utilization,
-            mempool_pressure, fee_momentum, gas_volatility, dex_activity,
-            thetanuts_iv, thetanuts_skew)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), score = VALUES(score)`,
-        [
-          row.market,
-          row.score,
-          row.blockNumber,
-          row.blockTimestamp,
-          row.baseFee,
-          row.utilization,
-          row.mempoolPressure,
-          row.feeMomentum,
-          row.gasVolatility,
-          row.dexActivity,
-          row.thetanutsIv,
-          row.thetanutsSkew,
-        ],
-      );
-      return (result as mysql.ResultSetHeader).insertId || null;
+      // recomputation changed it, and RETURNING id yields the existing
+      // row's id either way.
+      const rows = await this.sql<RawRow[]>`
+        INSERT INTO egsi_snapshot
+          (market, score, block_number, block_timestamp, base_fee, utilization,
+           mempool_pressure, fee_momentum, gas_volatility, dex_activity,
+           thetanuts_iv, thetanuts_skew)
+        VALUES (${row.market}, ${row.score}, ${row.blockNumber}, ${row.blockTimestamp},
+                ${row.baseFee}, ${row.utilization}, ${row.mempoolPressure},
+                ${row.feeMomentum}, ${row.gasVolatility}, ${row.dexActivity},
+                ${row.thetanutsIv}, ${row.thetanutsSkew})
+        ON CONFLICT (market, block_number) DO UPDATE SET score = EXCLUDED.score
+        RETURNING id`;
+      const id = Number(rows[0]?.id);
+      return Number.isFinite(id) && id > 0 ? id : null;
     } catch (err) {
       this.log.error(`failed to record EGSI snapshot: ${(err as Error).message}`);
       return null;
@@ -132,12 +175,11 @@ export class MysqlDatabase implements Database {
 
   async recordForecast(row: ForecastRow, snapshotId: number | null): Promise<void> {
     try {
-      await this.pool.execute(
-        `INSERT INTO forecast
-           (market, expected_egsi, confidence, p_tail_500, model_version, egsi_snapshot_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [row.market, row.expectedEgsi, row.confidence, row.pTail500, row.modelVersion, snapshotId],
-      );
+      await this.sql`
+        INSERT INTO forecast
+          (market, expected_egsi, confidence, p_tail_500, model_version, egsi_snapshot_id)
+        VALUES (${row.market}, ${row.expectedEgsi}, ${row.confidence}, ${row.pTail500},
+                ${row.modelVersion}, ${snapshotId})`;
     } catch (err) {
       this.log.error(`failed to record forecast: ${(err as Error).message}`);
     }
@@ -145,54 +187,29 @@ export class MysqlDatabase implements Database {
 
   async recordPreparedOrder(row: PreparedOrderRow): Promise<void> {
     try {
-      await this.pool.execute(
-        `INSERT INTO prepared_order
-           (trader, margin_account, is_bid, price, quantity, outcome, reject_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          row.trader,
-          row.marginAccount,
-          row.isBid ? 1 : 0,
-          row.price,
-          row.quantity,
-          row.outcome,
-          row.rejectReason,
-        ],
-      );
+      await this.sql`
+        INSERT INTO prepared_order
+          (trader, margin_account, is_bid, price, quantity, outcome, reject_reason)
+        VALUES (${row.trader}, ${row.marginAccount}, ${row.isBid}, ${row.price},
+                ${row.quantity}, ${row.outcome}, ${row.rejectReason})`;
     } catch (err) {
       this.log.error(`failed to record prepared order: ${(err as Error).message}`);
     }
   }
 
   async getEgsiHistory(market: string, limit: number): Promise<EgsiSnapshotRow[]> {
-    // LIMIT cannot be a bound parameter in a prepared statement, so it
-    // is coerced to a bounded integer and interpolated. Every other
-    // value here is still bound.
-    const safeLimit = Math.max(1, Math.min(10_000, Math.trunc(limit)));
-    const [rows] = await this.pool.query(
-      `SELECT market, score, block_number, block_timestamp, base_fee, utilization,
-              mempool_pressure, fee_momentum, gas_volatility, dex_activity,
-              thetanuts_iv, thetanuts_skew
-       FROM egsi_snapshot
-       WHERE market = ?
-       ORDER BY block_number ASC
-       LIMIT ${safeLimit}`,
-      [market],
-    );
-    return (rows as Record<string, unknown>[]).map((r) => ({
-      market: String(r.market),
-      score: Number(r.score),
-      blockNumber: Number(r.block_number),
-      blockTimestamp: Number(r.block_timestamp),
-      baseFee: Number(r.base_fee),
-      utilization: Number(r.utilization),
-      mempoolPressure: Number(r.mempool_pressure),
-      feeMomentum: Number(r.fee_momentum),
-      gasVolatility: Number(r.gas_volatility),
-      dexActivity: Number(r.dex_activity),
-      thetanutsIv: r.thetanuts_iv === null ? null : Number(r.thetanuts_iv),
-      thetanutsSkew: r.thetanuts_skew === null ? null : Number(r.thetanuts_skew),
-    }));
+    // The limit is still clamped to a bounded integer rather than
+    // trusted, even though it is bound as a parameter here.
+    const safeLimit = clampLimit(limit, 10_000);
+    const rows = await this.sql<RawRow[]>`
+      SELECT market, score, block_number, block_timestamp, base_fee, utilization,
+             mempool_pressure, fee_momentum, gas_volatility, dex_activity,
+             thetanuts_iv, thetanuts_skew
+      FROM egsi_snapshot
+      WHERE market = ${market}
+      ORDER BY block_number ASC
+      LIMIT ${safeLimit}`;
+    return rows.map(mapSnapshotRow);
   }
 
   /**
@@ -202,54 +219,54 @@ export class MysqlDatabase implements Database {
    * every raw reading to the gateway just to fold it — at 12s cycles a
    * day of history is ~7,000 rows for maybe 100 candles.
    *
-   * Open and close use MySQL window functions ordered by block_number,
+   * Open and close use Postgres window functions ordered by block_number,
    * so "first" and "last" mean first and last *by block*, not by
    * whichever row the engine happened to return first.
    */
   async getEgsiCandles(market: string, intervalSeconds: number, limit: number): Promise<Candle[]> {
-    const interval = Math.max(1, Math.trunc(intervalSeconds));
-    const safeLimit = Math.max(1, Math.min(5_000, Math.trunc(limit)));
-    const [rows] = await this.pool.query(
-      `SELECT bucket AS time,
-              MIN(score) AS low,
-              MAX(score) AS high,
-              MIN(first_score) AS open,
-              MIN(last_score)  AS close,
-              COUNT(*) AS samples
-       FROM (
-         SELECT score,
-                FLOOR(block_timestamp / ?) * ? AS bucket,
-                FIRST_VALUE(score) OVER w AS first_score,
-                LAST_VALUE(score)  OVER w AS last_score
-         FROM egsi_snapshot
-         WHERE market = ?
-         WINDOW w AS (
-           PARTITION BY FLOOR(block_timestamp / ?)
-           ORDER BY block_number
-           ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-         )
-       ) AS bucketed
-       GROUP BY bucket
-       ORDER BY bucket DESC
-       LIMIT ${safeLimit}`,
-      [interval, interval, market, interval],
-    );
+    const interval = clampInterval(intervalSeconds);
+    const safeLimit = clampLimit(limit, 5_000);
+    // Integer division on bigint truncates, matching FLOOR for the
+    // non-negative unix timestamps stored here.
+    const rows = await this.sql<RawRow[]>`
+      SELECT bucket AS time,
+             MIN(score) AS low,
+             MAX(score) AS high,
+             MIN(first_score) AS open,
+             MIN(last_score)  AS close,
+             COUNT(*) AS samples
+      FROM (
+        SELECT score,
+               (block_timestamp / ${interval}::bigint) * ${interval}::bigint AS bucket,
+               FIRST_VALUE(score) OVER w AS first_score,
+               LAST_VALUE(score)  OVER w AS last_score
+        FROM egsi_snapshot
+        WHERE market = ${market}
+        WINDOW w AS (
+          PARTITION BY (block_timestamp / ${interval}::bigint)
+          ORDER BY block_number
+          ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        )
+      ) AS bucketed
+      GROUP BY bucket
+      ORDER BY bucket DESC
+      LIMIT ${safeLimit}`;
     // Query descending so LIMIT keeps the most RECENT candles, then
     // reverse: charts read oldest-first.
-    return (rows as Record<string, unknown>[])
-      .map((r) => ({
-        time: Number(r.time),
-        open: Number(r.open),
-        high: Number(r.high),
-        low: Number(r.low),
-        close: Number(r.close),
-        samples: Number(r.samples),
-      }))
-      .reverse();
+    return rows.map(mapCandleRow).reverse();
   }
 
   async close(): Promise<void> {
-    await this.pool.end();
+    await this.sql.end({ timeout: 5 });
+  }
+}
+
+function isLocalHost(databaseUrl: string): boolean {
+  try {
+    const host = new URL(databaseUrl).hostname.replace(/^\[|\]$/g, '');
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
   }
 }
 
@@ -257,16 +274,14 @@ export class MysqlDatabase implements Database {
  * without durable state rather than refusing to start. */
 export function createDatabase(databaseUrl: string | undefined, log: Logger): Database | null {
   if (!databaseUrl) return null;
-  const pool = mysql.createPool({
-    uri: databaseUrl,
-    connectionLimit: 10,
-    waitForConnections: true,
-    // DECIMAL columns come back as strings by default to protect
-    // precision. Every DECIMAL here is a ratio or a display figure well
-    // within double's exact range, and the app's own types are numbers,
-    // so converting at the driver boundary keeps one conversion in one
-    // place instead of scattering Number() through the callers.
-    decimalNumbers: true,
+  const sql = postgres(databaseUrl, {
+    // One connection and no prepared statements: both are required for
+    // Supabase's transaction pooler and for serverless runtimes, where
+    // connections are short-lived and shared.
+    max: 1,
+    prepare: false,
+    idle_timeout: 20,
+    ssl: isLocalHost(databaseUrl) ? false : 'require',
   });
-  return new MysqlDatabase(pool, log);
+  return new PostgresDatabase(sql, log);
 }

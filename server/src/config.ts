@@ -43,7 +43,11 @@ function readEnvInt(name: string, fallback: number): number {
 export function loadGatewayConfig(): GatewayConfig {
   return {
     port: readEnvInt('GASX_API_PORT', 3000),
-    aiServiceUrl: readEnv('GASX_API_AI_SERVICE_URL') || 'http://localhost:8000',
+    // On Vercel the AI service is the Python function at /api/ai on the
+    // same deployment (api/ai.py).
+    aiServiceUrl:
+      readEnv('GASX_API_AI_SERVICE_URL') ||
+      (readEnv('VERCEL_URL') ? `https://${readEnv('VERCEL_URL')}/api/ai` : 'http://localhost:8000'),
     databaseUrl: readEnv('GASX_API_DATABASE_URL') || undefined,
     near: loadNearConfig(),
     riskPolicy: {
