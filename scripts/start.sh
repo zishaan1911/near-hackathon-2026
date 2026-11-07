@@ -121,7 +121,7 @@ start_service ai 8000 \
 
 # The gateway's predev hook rebuilds both adapters, so a stale dist/
 # after a merge cannot silently break it.
-start_service api 3000 npm --prefix "$REPO_ROOT/api" run dev
+start_service api 3000 npm --prefix "$REPO_ROOT/server" run dev
 
 FRONTEND_ARGS=(npm --prefix "$REPO_ROOT/frontend" run dev)
 if [ "$LAN" -eq 1 ]; then

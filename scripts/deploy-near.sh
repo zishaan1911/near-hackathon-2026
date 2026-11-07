@@ -19,6 +19,8 @@
 #   MATCHER_ID          account the matcher service runs as (informational:
 #                       match_orders is permissionless)
 #   DEPLOY_MOCK_TOKEN   true to build and deploy contracts/near/mock-ft
+#   GASX_WASM / TOKEN_WASM  paths to prebuilt wasm files (skips cargo-near)
+#   TOKEN_FUNDING / CONTRACT_FUNDING  NEAR for newly created accounts
 #   MARKET_EXPIRY_MS    override the expiry (default: next full hour)
 #   MAX_STALENESS_MS    oracle staleness bound (default 120000)
 #   MAX_PRICE           oracle price ceiling (default 1000, the EGSI scale)
@@ -51,8 +53,9 @@ for var in OWNER_ID CONTRACT_ID TOKEN_ID PUBLISHER_ID MATCHER_ID; do
   [ -n "${!var:-}" ] || die "$var is required"
 done
 command -v near  >/dev/null 2>&1 || die "near CLI (near-cli-rs) not found. Install: https://github.com/near/near-cli-rs"
-command -v cargo >/dev/null 2>&1 || die "cargo not found"
-cargo near --version >/dev/null 2>&1 || die "cargo-near not found. Install: cargo install cargo-near"
+if [ -z "${GASX_WASM:-}" ] || { [ "$DEPLOY_MOCK_TOKEN" = "true" ] && [ -z "${TOKEN_WASM:-}" ]; }; then
+  cargo near --version >/dev/null 2>&1 || die "cargo-near not found. Install it, or set GASX_WASM / TOKEN_WASM to prebuilt wasm files"
+fi
 
 if [ "$NEAR_NETWORK" = "mainnet" ] && [ "${ALLOW_MAINNET:-}" != "true" ]; then
   die "NEAR_NETWORK is mainnet; re-run with ALLOW_MAINNET=true if you mean it."
@@ -112,9 +115,9 @@ if [ "$DEPLOY_MOCK_TOKEN" = "true" ]; then
       json-args '{}' network-config "$NEAR_NETWORK" now >/dev/null 2>&1; then
     ok "mock token already deployed at $TOKEN_ID"
   else
-    TOKEN_WASM="$(build_wasm "$REPO_ROOT/contracts/near/mock-ft")"
+    TOKEN_WASM="${TOKEN_WASM:-$(build_wasm "$REPO_ROOT/contracts/near/mock-ft")}"
     ok "built $TOKEN_WASM"
-    create_account "$TOKEN_ID" '5 NEAR'
+    create_account "$TOKEN_ID" "${TOKEN_FUNDING:-5 NEAR}"
     # mock-ft's `new` takes no arguments; balances come from its public faucet.
     deploy "$TOKEN_ID" "$TOKEN_WASM" new '{}'
     ok "mock token deployed: $TOKEN_ID"
@@ -131,9 +134,9 @@ if account_exists "$CONTRACT_ID" && near contract call-function as-read-only "$C
     json-args '{}' network-config "$NEAR_NETWORK" now >/dev/null 2>&1; then
   ok "contract already initialised at $CONTRACT_ID (skipping deploy and new)"
 else
-  GASX_WASM="$(build_wasm "$REPO_ROOT/contracts/near/gasx")"
+  GASX_WASM="${GASX_WASM:-$(build_wasm "$REPO_ROOT/contracts/near/gasx")}"
   ok "built $GASX_WASM"
-  create_account "$CONTRACT_ID" '10 NEAR'
+  create_account "$CONTRACT_ID" "${CONTRACT_FUNDING:-10 NEAR}"
   deploy "$CONTRACT_ID" "$GASX_WASM" new \
     "{\"owner\":\"$OWNER_ID\",\"collateral_token\":\"$TOKEN_ID\",\"publisher\":\"$PUBLISHER_ID\",\"max_staleness_ms\":$MAX_STALENESS_MS,\"max_price\":$MAX_PRICE}"
   ok "contract deployed and initialised: $CONTRACT_ID"

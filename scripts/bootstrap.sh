@@ -219,10 +219,10 @@ done
 
 if [ "$WITH_DB" -eq 1 ]; then
   # Point the gateway at the database created above, if not already set.
-  cd "$REPO_ROOT/api"
+  cd "$REPO_ROOT/server"
   if ! grep -q '^GASX_API_DATABASE_URL=' .env 2>/dev/null; then
     echo 'GASX_API_DATABASE_URL=mysql://gasx:gasx@127.0.0.1:3306/gasx' >> .env
-    ok "api/.env points at the local database"
+    ok "server/.env points at the local database"
   fi
 fi
 
