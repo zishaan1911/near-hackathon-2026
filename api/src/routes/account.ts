@@ -1,42 +1,79 @@
 /**
- * Prepares (never signs) margin account transactions — the onboarding
- * half of the trade flow a trader needs before place_order is even
- * callable (contracts/gasx/sources/margin.move requires an existing
- * MarginAccount<C>).
+ * Account routes: prepares (never signs) the collateral transactions a
+ * trader needs around trading — deposit, withdraw, claim — and reads the
+ * trader's balance, orders and trades from the gasx contract. There is
+ * no open-account step on NEAR: a deposit credits the contract's
+ * `available` balance directly (docs/near-abi.md).
  */
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../server.js';
 
-interface PrepareOpenBody {
+interface PrepareAmountBody {
   trader?: unknown;
+  amount?: unknown;
 }
 
-interface PrepareDepositBody {
+interface PrepareClaimBody {
   trader?: unknown;
-  marginAccountId?: unknown;
-  coinObjectId?: unknown;
+  tradeId?: unknown;
+}
+
+interface ValidatedAmount {
+  trader: string;
+  amount: string;
+}
+
+function validateAmountBody(body: PrepareAmountBody): ValidatedAmount | string {
+  if (typeof body.trader !== 'string' || !body.trader) return 'trader is required';
+  if (typeof body.amount !== 'string' || !/^[1-9]\d*$/.test(body.amount)) {
+    return 'amount must be a positive integer string in token base units';
+  }
+  return { trader: body.trader, amount: body.amount };
 }
 
 export function registerAccountRoutes(app: FastifyInstance, deps: GatewayDeps): void {
-  app.post<{ Body: PrepareOpenBody }>('/api/v1/account/prepare-open', async (request, reply) => {
-    const trader = request.body?.trader;
-    if (typeof trader !== 'string' || !trader) {
-      return reply.status(400).send({ error: 'trader is required' });
+  app.post<{ Body: PrepareAmountBody }>('/api/v1/account/prepare-deposit', async (request, reply) => {
+    const validated = validateAmountBody(request.body ?? {});
+    if (typeof validated === 'string') {
+      return reply.status(400).send({ error: validated });
     }
-    return deps.chainAdapter.prepareOpenAccount({ trader });
+    return deps.chainAdapter.prepareDeposit(validated);
   });
 
-  app.post<{ Body: PrepareDepositBody }>('/api/v1/account/prepare-deposit', async (request, reply) => {
-    const { trader, marginAccountId, coinObjectId } = request.body ?? {};
+  app.post<{ Body: PrepareAmountBody }>('/api/v1/account/prepare-withdraw', async (request, reply) => {
+    const validated = validateAmountBody(request.body ?? {});
+    if (typeof validated === 'string') {
+      return reply.status(400).send({ error: validated });
+    }
+    return deps.chainAdapter.prepareWithdraw(validated);
+  });
+
+  app.post<{ Body: PrepareClaimBody }>('/api/v1/trades/prepare-claim', async (request, reply) => {
+    const { trader, tradeId } = request.body ?? {};
     if (typeof trader !== 'string' || !trader) {
       return reply.status(400).send({ error: 'trader is required' });
     }
-    if (typeof marginAccountId !== 'string' || !marginAccountId) {
-      return reply.status(400).send({ error: 'marginAccountId is required' });
+    if (typeof tradeId !== 'number' || !Number.isSafeInteger(tradeId) || tradeId < 0) {
+      return reply.status(400).send({ error: 'tradeId must be a non-negative integer' });
     }
-    if (typeof coinObjectId !== 'string' || !coinObjectId) {
-      return reply.status(400).send({ error: 'coinObjectId is required' });
-    }
-    return deps.chainAdapter.prepareDeposit({ trader, marginAccountId, coinObjectId });
+    return deps.chainAdapter.prepareClaim({ trader, tradeId });
+  });
+
+  app.get<{ Params: { accountId: string } }>('/api/v1/account/:accountId', async (request) => {
+    const { accountId } = request.params;
+    const [balance, openOrders, orders, trades] = await Promise.all([
+      deps.chainAdapter.getAccount(accountId),
+      deps.chainAdapter.getOpenOrders(),
+      deps.chainAdapter.getOrdersByAccount(accountId),
+      deps.chainAdapter.getTradesByAccount(accountId),
+    ]);
+    return {
+      accountId,
+      available: balance.available,
+      locked: balance.locked,
+      openOrders,
+      orders,
+      trades,
+    };
   });
 }

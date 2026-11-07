@@ -1,18 +1,22 @@
 import type {
+  AccountView,
   CancelOrderParams,
   ChainAdapter,
+  ClaimParams,
   DepositParams,
   MarketState,
-  OpenAccountParams,
+  OrderView,
+  PageOptions,
   PlaceOrderParams,
   PreparedTransaction,
-} from '@gasx/sui-adapter';
-import type { HedgeCandidate, HedgeProvider, HedgeRequest, HedgeRequestParams, VolSignal } from '@gasx/thetanuts-adapter';
+  TradeView,
+  WithdrawParams,
+} from '@gasx/near-adapter';
 import type { AiClient, EgsiSnapshotDto, ForecastDto, RunCycleInput } from '../src/aiClient.js';
 
 export function makeMarketState(overrides: Partial<MarketState> = {}): MarketState {
   return {
-    marketId: '0xmarket',
+    marketId: 'gasx.testnet#1',
     underlying: 'EGSI-1H',
     expiryMs: 1_700_000_000_000,
     contractMultiplier: 10,
@@ -22,7 +26,7 @@ export function makeMarketState(overrides: Partial<MarketState> = {}): MarketSta
     settled: false,
     settlementPrice: null,
     oracle: {
-      oracleId: '0xoracle',
+      oracleId: 'gasx.testnet',
       price: 441,
       hasPrice: true,
       lastUpdateMs: 1_700_000_000_000,
@@ -34,114 +38,115 @@ export function makeMarketState(overrides: Partial<MarketState> = {}): MarketSta
   };
 }
 
+export function makeOrderView(overrides: Partial<OrderView> = {}): OrderView {
+  return {
+    orderId: 7,
+    marketId: 1,
+    owner: 'alice.testnet',
+    isBid: true,
+    price: 500,
+    quantity: 10,
+    lockedMargin: '50000000',
+    status: 'open',
+    ...overrides,
+  };
+}
+
+export function makeTradeView(overrides: Partial<TradeView> = {}): TradeView {
+  return {
+    tradeId: 4,
+    marketId: 1,
+    buyer: 'alice.testnet',
+    seller: 'bob.testnet',
+    price: 500,
+    quantity: 10,
+    buyerCommitted: '50000000',
+    sellerCommitted: '50000000',
+    buyerClaimed: false,
+    sellerClaimed: false,
+    ...overrides,
+  };
+}
+
 export class FakeChainAdapter implements ChainAdapter {
   marketState: MarketState = makeMarketState();
   getMarketStateError: Error | null = null;
+  account: AccountView = { available: '0', locked: '0' };
+  openOrders: OrderView[] = [];
+  accountOrders: OrderView[] = [];
+  accountTrades: TradeView[] = [];
+  lastAccountId: string | null = null;
   lastPreparePlaceOrderParams: PlaceOrderParams | null = null;
   lastPrepareCancelOrderParams: CancelOrderParams | null = null;
-  lastPrepareOpenAccountParams: OpenAccountParams | null = null;
   lastPrepareDepositParams: DepositParams | null = null;
+  lastPrepareWithdrawParams: WithdrawParams | null = null;
+  lastPrepareClaimParams: ClaimParams | null = null;
 
   async getMarketState(): Promise<MarketState> {
     if (this.getMarketStateError) throw this.getMarketStateError;
     return this.marketState;
   }
 
-  async prepareOpenAccount(params: OpenAccountParams): Promise<PreparedTransaction> {
-    this.lastPrepareOpenAccountParams = params;
-    return { transactionJson: '{"fake":"open-account"}', summary: { action: 'open_account' } };
+  async getAccount(accountId: string): Promise<AccountView> {
+    this.lastAccountId = accountId;
+    return this.account;
+  }
+
+  async getOpenOrders(_opts?: PageOptions): Promise<OrderView[]> {
+    return this.openOrders;
+  }
+
+  async getOrdersByAccount(accountId: string, _opts?: PageOptions): Promise<OrderView[]> {
+    this.lastAccountId = accountId;
+    return this.accountOrders;
+  }
+
+  async getTradesByAccount(accountId: string, _opts?: PageOptions): Promise<TradeView[]> {
+    this.lastAccountId = accountId;
+    return this.accountTrades;
   }
 
   async prepareDeposit(params: DepositParams): Promise<PreparedTransaction> {
     this.lastPrepareDepositParams = params;
-    return { transactionJson: '{"fake":"deposit"}', summary: { action: 'deposit' } };
+    return fakePrepared({ action: 'deposit', amount: params.amount });
+  }
+
+  async prepareWithdraw(params: WithdrawParams): Promise<PreparedTransaction> {
+    this.lastPrepareWithdrawParams = params;
+    return fakePrepared({ action: 'withdraw', amount: params.amount });
   }
 
   async preparePlaceOrder(params: PlaceOrderParams): Promise<PreparedTransaction> {
     this.lastPreparePlaceOrderParams = params;
-    return {
-      transactionJson: '{"fake":"place-order"}',
-      summary: { action: 'place_order', side: params.isBid ? 'bid' : 'ask', price: params.price, quantity: params.quantity },
-    };
+    return fakePrepared({
+      action: 'place_order',
+      side: params.isBid ? 'bid' : 'ask',
+      price: params.price,
+      quantity: params.quantity,
+    });
   }
 
   async prepareCancelOrder(params: CancelOrderParams): Promise<PreparedTransaction> {
     this.lastPrepareCancelOrderParams = params;
-    return { transactionJson: '{"fake":"cancel-order"}', summary: { action: 'cancel_order', orderId: params.orderId } };
+    return fakePrepared({ action: 'cancel_order', orderId: params.orderId });
+  }
+
+  async prepareClaim(params: ClaimParams): Promise<PreparedTransaction> {
+    this.lastPrepareClaimParams = params;
+    return fakePrepared({ action: 'claim', tradeId: params.tradeId });
   }
 }
 
-export function makeVolSignal(overrides: Partial<VolSignal> = {}): VolSignal {
+function fakePrepared(summary: PreparedTransaction['summary']): PreparedTransaction {
   return {
-    underlying: 'ETH',
-    underlyingPrice: 2000,
-    atmIv: 0.65,
-    skew25Delta: 0.05,
-    expiry: 1_700_600_000,
-    sampleSize: 12,
-    computedAt: Date.now(),
-    ...overrides,
-  };
-}
-
-export class FakeHedgeProvider implements HedgeProvider {
-  volSignal: VolSignal = makeVolSignal();
-  getVolSignalError: Error | null = null;
-  requestHedgeQuoteError: Error | null = null;
-  /** Null models the realistic "RFQ submitted, no MM has responded
-   * yet" case, which the hedge flow has to handle explicitly. */
-  bestCandidate: HedgeCandidate | null = makeHedgeCandidate();
-  lastRequestHedgeQuoteParams: HedgeRequestParams | null = null;
-
-  async getVolSignal(): Promise<VolSignal> {
-    if (this.getVolSignalError) throw this.getVolSignalError;
-    return this.volSignal;
-  }
-
-  async requestHedgeQuote(params: HedgeRequestParams): Promise<HedgeRequest> {
-    if (this.requestHedgeQuoteError) throw this.requestHedgeQuoteError;
-    this.lastRequestHedgeQuoteParams = params;
-    return {
-      quotationId: '42',
-      underlying: params.underlying,
-      optionType: params.optionType,
-      strike: params.strike,
-      expiry: params.expiry,
-      numContracts: params.numContracts,
-      direction: params.direction,
-      offerDeadlineUnixSeconds: 1_700_000_600,
-      transactionHash: '0xrfqtx',
-    };
-  }
-
-  async getBestCandidate(_request: HedgeRequest): Promise<HedgeCandidate | null> {
-    return this.bestCandidate;
-  }
-
-  executeHedgeError: Error | null = null;
-  /** Recorded so tests can assert /execute settled the SAME request and
-   * candidate runHedgeEvaluation actually approved, not a stale or
-   * fabricated pair. */
-  lastExecuteHedgeCall: { request: HedgeRequest; candidate: HedgeCandidate } | null = null;
-  executeHedgeResult: { transactionHash: string } = { transactionHash: '0xsettletx' };
-
-  async executeHedge(
-    request: HedgeRequest,
-    candidate: HedgeCandidate,
-  ): Promise<{ transactionHash: string }> {
-    if (this.executeHedgeError) throw this.executeHedgeError;
-    this.lastExecuteHedgeCall = { request, candidate };
-    return this.executeHedgeResult;
-  }
-}
-
-export function makeHedgeCandidate(overrides: Partial<HedgeCandidate> = {}): HedgeCandidate {
-  return {
-    quotationId: '42',
-    offeror: '0xmm',
-    pricePerContract: 50,
-    raw: { offerAmount: '50000000', nonce: '1' },
-    ...overrides,
+    receiverId: 'gasx.testnet',
+    actions: [
+      {
+        type: 'FunctionCall',
+        params: { methodName: String(summary.action), args: {}, gas: '30000000000000', deposit: '0' },
+      },
+    ],
+    summary,
   };
 }
 

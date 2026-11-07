@@ -2,9 +2,7 @@
  * Environment-driven configuration for the API gateway. Copy .env.example
  * to .env and fill in real values.
  */
-import { loadConfigFromEnv as loadSuiConfig, type SuiAdapterConfig } from '@gasx/sui-adapter';
-import { loadConfigFromEnv as loadThetanutsConfig, type ThetanutsAdapterConfig } from '@gasx/thetanuts-adapter';
-import type { ExposureConfig } from './exposure.js';
+import { loadConfigFromEnv as loadNearConfig, type NearAdapterConfig } from '@gasx/near-adapter';
 import type { RiskPolicyConfig } from './riskPolicy.js';
 
 export interface GatewayConfig {
@@ -15,10 +13,8 @@ export interface GatewayConfig {
   /** MySQL connection URL. Undefined disables persistence entirely —
    * the gateway then runs without durable state (see src/db.ts). */
   databaseUrl: string | undefined;
-  sui: SuiAdapterConfig;
-  thetanuts: ThetanutsAdapterConfig;
+  near: NearAdapterConfig;
   riskPolicy: RiskPolicyConfig;
-  exposureConfig: ExposureConfig;
   /** Undefined disables the chat assistant entirely -- POST
    * /api/v1/chat then returns 501 rather than silently degrading, since
    * a chatbot that cannot reach an LLM is not a smaller chatbot, it is
@@ -40,27 +36,16 @@ function readEnvInt(name: string, fallback: number): number {
   return n;
 }
 
-function readEnvFloat(name: string, fallback: number): number {
-  const raw = readEnv(name);
-  if (!raw) return fallback;
-  const n = Number.parseFloat(raw);
-  if (!Number.isFinite(n)) {
-    throw new Error(`${name} must be a number, got '${raw}'`);
-  }
-  return n;
-}
-
-/** Loads the gateway's own settings plus both chain adapters' configs
- * (each validates its own required variables — see their .env.example
- * files) from GASX_API_-prefixed (gateway) and adapter-specific
- * environment variables. */
+/** Loads the gateway's own settings plus the NEAR adapter's config (it
+ * validates its own required variables — see its .env.example) from
+ * GASX_API_-prefixed (gateway) and adapter-specific environment
+ * variables. */
 export function loadGatewayConfig(): GatewayConfig {
   return {
     port: readEnvInt('GASX_API_PORT', 3000),
     aiServiceUrl: readEnv('GASX_API_AI_SERVICE_URL') || 'http://localhost:8000',
     databaseUrl: readEnv('GASX_API_DATABASE_URL') || undefined,
-    sui: loadSuiConfig(),
-    thetanuts: loadThetanutsConfig(),
+    near: loadNearConfig(),
     riskPolicy: {
       // ARCHITECTURE.md §8's defaults — "small fixed cap" left concrete
       // here rather than symbolic; override via env for a different
@@ -88,31 +73,6 @@ export function loadGatewayConfig(): GatewayConfig {
       // (explaining the platform, reading back numbers it is handed)
       // does not need the larger model's extra capability.
       model: readEnv('GASX_API_GROQ_MODEL') || 'openai/gpt-oss-20b',
-    },
-    exposureConfig: {
-      // See exposure.ts's header: this beta is a configured assumption,
-      // not a measured correlation — there is no EGSI/ETH price history
-      // to regress against yet. 0.5 is a deliberately middling
-      // placeholder, not a derived figure.
-      ethBeta: readEnvFloat('GASX_API_ETH_BETA', 0.5),
-      // Lowered from 5000 to 1: any nonzero, nonzero-beta position now
-      // "breaches" and proceeds toward requesting a hedge quote, rather
-      // than requiring a large exposure to trigger one. This makes
-      // getting AS FAR AS an approved hedge quote easy on small test
-      // positions. It does NOT, on its own, produce a completed
-      // Thetanuts trade -- /hedge/evaluate still stops at the approval
-      // step and never calls settleQuotation (see routes/hedge.ts's
-      // module comment). Getting an actual executed trade needs that
-      // execution step built, which is a deliberate, separate, real-
-      // money-spending addition, not a config change.
-      hedgeThresholdNotional: readEnvInt('GASX_API_HEDGE_THRESHOLD_NOTIONAL', 1),
-      // Float, not int: the Thetanuts SDK accepts fractional contract
-      // sizes and converts them using the collateral token's decimals,
-      // so a small hedge is a real option rather than being rounded to
-      // zero or forced up to a whole contract.
-      hedgeContracts: Math.max(0.01, readEnvFloat('GASX_API_HEDGE_CONTRACTS', 1)),
-      offerDeadlineMinutes: readEnvInt('GASX_API_HEDGE_OFFER_DEADLINE_MINUTES', 10),
-      hedgeExpiryHours: readEnvInt('GASX_API_HEDGE_EXPIRY_HOURS', 24),
     },
   };
 }

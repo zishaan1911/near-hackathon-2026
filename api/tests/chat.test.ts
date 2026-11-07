@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer, type GatewayDeps } from '../src/server.js';
 import type { RiskPolicyConfig } from '../src/riskPolicy.js';
-import type { ExposureConfig } from '../src/exposure.js';
-import { FakeAiClient, FakeChainAdapter, FakeHedgeProvider, makeEgsiSnapshot } from './fakes.js';
+import { FakeAiClient, FakeChainAdapter, makeEgsiSnapshot } from './fakes.js';
 
 const riskPolicy: RiskPolicyConfig = {
   maxOrderContracts: 100,
@@ -13,14 +12,6 @@ const riskPolicy: RiskPolicyConfig = {
   maxHedgeNotional: 1000,
 };
 
-const exposureConfig: ExposureConfig = {
-  ethBeta: 0.5,
-  hedgeThresholdNotional: 5000,
-  hedgeContracts: 1,
-  offerDeadlineMinutes: 10,
-  hedgeExpiryHours: 24,
-};
-
 let app: FastifyInstance;
 let aiClient: FakeAiClient;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -28,10 +19,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 function buildApp(groq?: { apiKey: string | undefined; model: string }) {
   const deps: GatewayDeps = {
     chainAdapter: new FakeChainAdapter(),
-    hedgeProvider: new FakeHedgeProvider(),
     aiClient,
     riskPolicy,
-    exposureConfig,
     logger: false,
     groq,
   };

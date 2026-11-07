@@ -7,7 +7,7 @@
  *
  * 1. **Persistence never fails a request.** Every write here is
  *    best-effort: it logs and swallows on error rather than throwing.
- *    A trader placing an order, or an operator evaluating a hedge,
+ *    A trader placing an order
  *    should not get a 500 because the audit table was briefly
  *    unreachable. The request's own work has already succeeded by the
  *    time these are called. Reads are separate — those propagate, since
@@ -16,7 +16,7 @@
  * 2. **The database is optional.** With no GASX_API_DATABASE_URL
  *    configured, `createDatabase` returns null and the gateway runs
  *    exactly as before, just without durable state. That keeps the
- *    dev-market path (blockchain/sui's devMarket.ts) working with no
+ *    dev-market path (blockchain/near's devMarket.ts) working with no
  *    MySQL install at all.
  */
 import mysql from 'mysql2/promise';
@@ -59,31 +59,11 @@ export interface ForecastRow {
   modelVersion: string;
 }
 
-export interface HedgeEvaluationRow {
-  netContracts: number;
-  egsiLevel: number;
-  egsiNotional: number;
-  ethBetaNotional: number;
-  breached: boolean;
-  suggestedOptionType: 'CALL' | 'PUT' | null;
-  modelConfidence: number | null;
-  quotationId: string | null;
-  rfqTxHash: string | null;
-  offeror: string | null;
-  pricePerContract: number | null;
-  quotedNotional: number | null;
-  approved: boolean | null;
-  reason: string | null;
-  /** Whether this evaluation went on to actually settle a trade on
-   * Thetanuts, not merely get approved. Defaults to false for every
-   * caller except POST /hedge/execute's success path -- see that
-   * route's own comment for why "approved" and "executed" are
-   * deliberately kept as two separate, honest facts rather than one. */
-  executed: boolean;
-}
-
 export interface PreparedOrderRow {
   trader: string;
+  /** The migration's margin_account column is NOT NULL and predates the
+   * NEAR port; on NEAR there is no per-trader margin account, so the
+   * gateway records the contract id here. */
   marginAccount: string;
   isBid: boolean;
   price: number;
@@ -95,7 +75,6 @@ export interface PreparedOrderRow {
 export interface Database {
   recordEgsiSnapshot(row: EgsiSnapshotRow): Promise<number | null>;
   recordForecast(row: ForecastRow, snapshotId: number | null): Promise<void>;
-  recordHedgeEvaluation(row: HedgeEvaluationRow): Promise<void>;
   recordPreparedOrder(row: PreparedOrderRow): Promise<void>;
   /** Durable EGSI history, oldest first — what ai/inference/train.py
    * needs in order to train on real data rather than synthetic. */
@@ -161,37 +140,6 @@ export class MysqlDatabase implements Database {
       );
     } catch (err) {
       this.log.error(`failed to record forecast: ${(err as Error).message}`);
-    }
-  }
-
-  async recordHedgeEvaluation(row: HedgeEvaluationRow): Promise<void> {
-    try {
-      await this.pool.execute(
-        `INSERT INTO hedge_evaluation
-           (net_contracts, egsi_level, egsi_notional, eth_beta_notional, breached,
-            suggested_option_type, model_confidence, quotation_id, rfq_tx_hash, offeror,
-            price_per_contract, quoted_notional, approved, reason, executed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          row.netContracts,
-          row.egsiLevel,
-          row.egsiNotional,
-          row.ethBetaNotional,
-          row.breached ? 1 : 0,
-          row.suggestedOptionType,
-          row.modelConfidence,
-          row.quotationId,
-          row.rfqTxHash,
-          row.offeror,
-          row.pricePerContract,
-          row.quotedNotional,
-          row.approved === null ? null : row.approved ? 1 : 0,
-          row.reason,
-          row.executed ? 1 : 0,
-        ],
-      );
-    } catch (err) {
-      this.log.error(`failed to record hedge evaluation: ${(err as Error).message}`);
     }
   }
 

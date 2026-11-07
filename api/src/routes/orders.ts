@@ -1,8 +1,8 @@
 /**
  * ARCHITECTURE.md §9's Trade Flow: "FE->>API: Prepare order (pre-trade
- * risk checks); API-->>FE: Sui transaction payload." Every response
- * here is a PreparedTransaction (blockchain/sui) for the frontend's
- * wallet to sign — this gateway never signs or broadcasts anything.
+ * risk checks); API-->>FE: transaction payload." Every response here is
+ * a PreparedTransaction (blockchain/near) for the frontend's wallet to
+ * sign — this gateway never signs or broadcasts anything.
  */
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../server.js';
@@ -10,7 +10,6 @@ import { checkOrderRisk } from '../riskPolicy.js';
 
 interface PrepareOrderBody {
   trader?: unknown;
-  marginAccountId?: unknown;
   isBid?: unknown;
   price?: unknown;
   quantity?: unknown;
@@ -18,7 +17,6 @@ interface PrepareOrderBody {
 
 interface ValidatedPrepareOrder {
   trader: string;
-  marginAccountId: string;
   isBid: boolean;
   price: number;
   quantity: number;
@@ -26,30 +24,28 @@ interface ValidatedPrepareOrder {
 
 export function validatePrepareOrderBody(body: PrepareOrderBody): ValidatedPrepareOrder | string {
   if (typeof body.trader !== 'string' || !body.trader) return 'trader is required';
-  if (typeof body.marginAccountId !== 'string' || !body.marginAccountId) return 'marginAccountId is required';
   if (typeof body.isBid !== 'boolean') return 'isBid must be a boolean';
   if (typeof body.price !== 'number') return 'price must be a number';
   if (typeof body.quantity !== 'number') return 'quantity must be a number';
-  return { trader: body.trader, marginAccountId: body.marginAccountId, isBid: body.isBid, price: body.price, quantity: body.quantity };
+  return { trader: body.trader, isBid: body.isBid, price: body.price, quantity: body.quantity };
 }
 
 interface PrepareCancelBody {
   trader?: unknown;
   orderId?: unknown;
-  marginAccountId?: unknown;
 }
 
 interface ValidatedPrepareCancel {
   trader: string;
-  orderId: string;
-  marginAccountId: string;
+  orderId: number;
 }
 
 export function validatePrepareCancelBody(body: PrepareCancelBody): ValidatedPrepareCancel | string {
   if (typeof body.trader !== 'string' || !body.trader) return 'trader is required';
-  if (typeof body.orderId !== 'string' || !body.orderId) return 'orderId is required';
-  if (typeof body.marginAccountId !== 'string' || !body.marginAccountId) return 'marginAccountId is required';
-  return { trader: body.trader, orderId: body.orderId, marginAccountId: body.marginAccountId };
+  if (typeof body.orderId !== 'number' || !Number.isSafeInteger(body.orderId) || body.orderId < 0) {
+    return 'orderId must be a non-negative integer';
+  }
+  return { trader: body.trader, orderId: body.orderId };
 }
 
 export function registerOrderRoutes(app: FastifyInstance, deps: GatewayDeps): void {
@@ -61,6 +57,10 @@ export function registerOrderRoutes(app: FastifyInstance, deps: GatewayDeps): vo
 
     const market = await deps.chainAdapter.getMarketState();
     const referencePrice = market.oracle.hasPrice ? market.oracle.price : undefined;
+
+    // prepared_order.margin_account is NOT NULL and there is no per-trader
+    // margin account on NEAR, so the contract id (the oracle id) stands in.
+    const marginAccount = market.oracle.oracleId;
 
     const riskResult = checkOrderRisk(
       {
@@ -79,7 +79,7 @@ export function registerOrderRoutes(app: FastifyInstance, deps: GatewayDeps): vo
       // to reconstruct later if it was never written down.
       await deps.db?.recordPreparedOrder({
         trader: validated.trader,
-        marginAccount: validated.marginAccountId,
+        marginAccount,
         isBid: validated.isBid,
         price: validated.price,
         quantity: validated.quantity,
@@ -95,7 +95,7 @@ export function registerOrderRoutes(app: FastifyInstance, deps: GatewayDeps): vo
     // us that, and it does not exist yet (see database/README.md).
     await deps.db?.recordPreparedOrder({
       trader: validated.trader,
-      marginAccount: validated.marginAccountId,
+      marginAccount,
       isBid: validated.isBid,
       price: validated.price,
       quantity: validated.quantity,

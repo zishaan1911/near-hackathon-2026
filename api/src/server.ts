@@ -1,31 +1,26 @@
 /**
  * Fastify app factory. Takes dependencies as plain constructor
  * arguments (GatewayDeps) rather than reaching for globals, so tests can
- * inject fakes implementing ChainAdapter/HedgeProvider/AiClient and
+ * inject fakes implementing ChainAdapter/AiClient and
  * exercise real route logic (including risk policy checks) via
  * Fastify's `.inject()` without a live network connection anywhere.
  */
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { ChainAdapter } from '@gasx/sui-adapter';
-import type { HedgeProvider } from '@gasx/thetanuts-adapter';
+import type { ChainAdapter } from '@gasx/near-adapter';
 import type { AiClient } from './aiClient.js';
 import type { Database } from './db.js';
 import type { EngineLayer } from './engineLayer.js';
 import { AiServiceError } from './aiClient.js';
-import type { ExposureConfig } from './exposure.js';
 import type { RiskPolicyConfig } from './riskPolicy.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerChatRoutes } from './routes/chat.js';
-import { registerHedgeRoutes } from './routes/hedge.js';
 import { registerMarketRoutes } from './routes/market.js';
 import { registerOrderRoutes } from './routes/orders.js';
 
 export interface GatewayDeps {
   chainAdapter: ChainAdapter;
-  hedgeProvider: HedgeProvider;
   aiClient: AiClient;
   riskPolicy: RiskPolicyConfig;
-  exposureConfig: ExposureConfig;
   /** Optional off-chain depth/quote layer (the C++ engine). Null runs
    * the gateway exactly as before, without indicative depth. */
   engine?: EngineLayer | null;
@@ -47,12 +42,11 @@ export function buildServer(deps: GatewayDeps): FastifyInstance {
   registerMarketRoutes(app, deps);
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
-  registerHedgeRoutes(app, deps);
   registerChatRoutes(app, deps);
 
   // AiServiceError (POST /cycle failed or was unreachable) maps to 502 —
   // this gateway's fault lies with an upstream dependency, not the
-  // caller's request. DevMarketUnavailableError (blockchain/sui's
+  // caller's request. DevMarketUnavailableError (blockchain/near's
   // dev-market mode) maps to 503 with its message, because the caller
   // needs to know *why* orders are unavailable. Everything else falls
   // back to a generic 500 rather than leaking internal error details to

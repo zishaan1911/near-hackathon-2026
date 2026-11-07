@@ -1,22 +1,21 @@
 /**
- * Real entrypoint: wires the real SuiChainAdapter/ThetanutsHedgeProvider/
- * HttpAiClient into buildServer and starts listening. Run with:
+ * Real entrypoint: wires the real NearChainAdapter/HttpAiClient into
+ * buildServer and starts listening. Run with:
  *
  *   cd api && npm run dev
  */
 import { loadEnvFile } from 'node:process';
-import { SuiChainAdapter } from '@gasx/sui-adapter';
-import { ThetanutsHedgeProvider } from '@gasx/thetanuts-adapter';
+import { NearChainAdapter } from '@gasx/near-adapter';
 import { HttpAiClient } from './aiClient.js';
 import { loadGatewayConfig } from './config.js';
 import { createDatabase } from './db.js';
 import { CppEngineLayer } from './engineLayer.js';
 import { buildServer } from './server.js';
 
-// Load the gateway's own .env plus both chain adapters' .env files
+// Load the gateway's own .env plus the NEAR adapter's .env file
 // (api/.env.example documents the split). Each is optional — config
-// defaults and the adapters' own validation still apply afterwards.
-for (const path of ['.env', '../blockchain/sui/.env', '../blockchain/thetanuts/.env']) {
+// defaults and the adapter's own validation still apply afterwards.
+for (const path of ['.env', '../blockchain/near/.env']) {
   try {
     loadEnvFile(path);
   } catch {
@@ -37,11 +36,9 @@ const app = buildServer({
     maxNetPosition: config.riskPolicy.maxPositionContracts,
     minConfidence: config.riskPolicy.minModelConfidence,
   }),
-  chainAdapter: new SuiChainAdapter(config.sui),
-  hedgeProvider: new ThetanutsHedgeProvider(config.thetanuts),
+  chainAdapter: new NearChainAdapter(config.near),
   aiClient,
   riskPolicy: config.riskPolicy,
-  exposureConfig: config.exposureConfig,
   groq: config.groq,
 });
 
