@@ -1,25 +1,16 @@
-import { useCurrentAccount, useDAppKit } from '@mysten/dapp-kit-react';
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import type { Candle, MarketSnapshot } from '../lib/api';
 import { prepareOrder } from '../lib/api';
+import { useNear } from '../lib/near';
 import { PriceChart, type ChartMode } from './Charts';
+import { AccountPanel } from './AccountPanel';
 
 export interface SessionTrade {
-  digest: string;
+  txHash: string;
   side: 'long' | 'short';
   quantity: number;
   price: number;
   time: number;
-}
-
-function txDigest(result: unknown): string {
-  if (!result || typeof result !== 'object') return '';
-  const root = result as Record<string, unknown>;
-  const direct = root.digest;
-  if (typeof direct === 'string') return direct;
-  const tx = root.Transaction;
-  if (tx && typeof tx === 'object' && typeof (tx as Record<string, unknown>).digest === 'string') return String((tx as Record<string, unknown>).digest);
-  return '';
 }
 
 const TIMEFRAMES = [
@@ -72,8 +63,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   onIntervalChange: (seconds: number) => void;
   onTrade: (trade: SessionTrade) => void;
 }) {
-  const account = useCurrentAccount();
-  const dAppKit = useDAppKit();
+  const { accountId, signAndSend } = useNear();
   const [side, setSide] = useState<'long' | 'short'>('long');
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit');
   const [chartMode, setChartMode] = useState<ChartMode>('candle');
@@ -122,7 +112,6 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   const price = Number(priceInput) || 0;
   const effectivePrice = orderType === 'market' ? snapToTick(bestReferencePrice, tickSize) : snapToTick(price, tickSize);
 
-  const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const multiplier = Number.isFinite(market?.contractMultiplier) ? market!.contractMultiplier! : 1;
@@ -135,7 +124,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   const asks = snapshot?.orderbook.asks ?? [];
   const bids = snapshot?.orderbook.bids ?? [];
   const canSubmit = Boolean(
-    account && accountId && displayQuantity >= MIN_DISPLAY_QUANTITY && effectivePrice > 0 && !market?.devMode && !busy,
+    accountId && displayQuantity >= MIN_DISPLAY_QUANTITY && effectivePrice > 0 && !market?.devMode && !busy,
   );
   const lastCandle = candles.at(-1);
   const firstCandle = candles[0];
@@ -147,7 +136,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   }), [asks, bids]);
 
   async function submit() {
-    if (!account || !market) return;
+    if (!accountId || !market) return;
     setBusy(true);
     setMessage('Preparing transaction through GASX risk checks…');
     // The scaling convention lives entirely at this one boundary: what
@@ -158,19 +147,19 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
 
     try {
       const prepared = await prepareOrder({
-        marketId: market.id,
-        accountId,
-        owner: account.address,
-        side,
+        trader: accountId,
+        isBid: side === 'long',
         price: effectivePrice,
         quantity: onChainQuantity,
       });
-      setMessage('Approved. Confirm the transaction in your Sui wallet…');
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: prepared.transaction });
-      const digest = txDigest(result);
-      if (!digest) throw new Error('Transaction returned without a digest. Check wallet/network response.');
-      onTrade({ digest, side, quantity: displayQuantity, price: effectivePrice, time: Date.now() });
-      setMessage(`Order executed on Sui · ${digest.slice(0, 12)}…`);
+      setMessage('Approved. Confirm the transaction in your NEAR wallet…');
+      const txHash = await signAndSend(prepared);
+      if (txHash) {
+        onTrade({ txHash, side, quantity: displayQuantity, price: effectivePrice, time: Date.now() });
+        setMessage(`Order sent on NEAR · ${txHash.slice(0, 12)}…`);
+      } else {
+        setMessage('Order sent. Check your NEAR wallet for its status.');
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Order failed');
     } finally {
@@ -182,7 +171,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
     <div className="trade-page">
       <div className="trade-grid">
         <section className="card order-ticket-card">
-          <div className="card-heading"><div><span className="section-kicker">SUI FUTURES</span><h2>Place Order</h2></div></div>
+          <div className="card-heading"><div><span className="section-kicker">NEAR FUTURES</span><h2>Place Order</h2></div></div>
           <div className="side-switch"><button className={side === 'long' ? 'long active' : ''} onClick={() => setSide('long')}>Long</button><button className={side === 'short' ? 'short active' : ''} onClick={() => setSide('short')}>Short</button></div>
           <label className="field"><span>Contract</span><div className="field-static">{market?.label ?? 'EGSI-1H'} <small>1 hour</small></div></label>
           <label className="field">
@@ -219,9 +208,8 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
             </label>
           )}
           <label className="field"><span>Size <small>contracts · min {MIN_DISPLAY_QUANTITY}</small></span><input type="number" min={MIN_DISPLAY_QUANTITY} step={MIN_DISPLAY_QUANTITY} value={sizeInput} onChange={(e: ChangeEvent<HTMLInputElement>) => setSizeInput(e.target.value)} /></label>
-          <label className="field"><span>Margin Account ID</span><input value={accountId} onChange={(e: ChangeEvent<HTMLInputElement>) => setAccountId(e.target.value)} placeholder="0x…" /></label>
-          <div className="order-summary"><div><span>Notional Value</span><b>${notional.toFixed(2)}</b></div><div><span>Est. Margin</span><b>${margin.toFixed(2)}</b></div><div><span>Collateral</span><b>USDC</b></div></div>
-          <button className={`button order-button ${side === 'short' ? 'short-button' : 'button-primary'}`} disabled={!canSubmit} onClick={() => void submit()}>{!account ? 'Connect wallet to trade' : busy ? 'Processing…' : 'Review & Sign  ◇'}</button>
+          <div className="order-summary"><div><span>Notional Value</span><b>${notional.toFixed(2)}</b></div><div><span>Est. Margin</span><b>${margin.toFixed(2)}</b></div><div><span>Collateral</span><b>tUSDC</b></div></div>
+          <button className={`button order-button ${side === 'short' ? 'short-button' : 'button-primary'}`} disabled={!canSubmit} onClick={() => void submit()}>{!accountId ? 'Connect wallet to trade' : busy ? 'Processing…' : 'Review & Sign  ◇'}</button>
           {message && <div className={message.toLowerCase().includes('fail') || message.toLowerCase().includes('error') ? 'inline-error' : 'inline-message'}>{message}</div>}
         </section>
 
@@ -261,6 +249,8 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
           <div className="indicative-note">Indicative depth is generated from quoting logic, not indexed resting orders.</div>
         </section>
       </div>
+
+      <AccountPanel settled={market?.settled ?? false} />
     </div>
   );
 }

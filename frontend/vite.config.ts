@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // wallet-selector and its @near-js dependencies expect a Node-style global.
+  define: {
+    global: 'globalThis',
+  },
   server: {
     port: 5173,
     // The repo lives on /mnt/c (Windows filesystem); inotify-based change

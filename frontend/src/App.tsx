@@ -1,4 +1,3 @@
-import { useCurrentAccount } from '@mysten/dapp-kit-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './styles.css';
 import {
@@ -7,12 +6,11 @@ import {
   type Candle,
   type MarketSnapshot,
 } from './lib/api';
+import { txExplorerUrl } from './lib/near';
 import { AppHeader } from './components/AppHeader';
 import { LandingPage } from './components/LandingPage';
-import { WalletModal } from './components/WalletModal';
 import { MarketDashboard } from './components/MarketDashboard';
 import { TradePage, type SessionTrade } from './components/TradePage';
-import { HedgePage } from './components/HedgePage';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { ChatWidget } from './components/ChatWidget';
 
@@ -35,20 +33,24 @@ function SessionPositions({ trades }: { trades: SessionTrade[] }) {
                 <th>Side</th>
                 <th>Size</th>
                 <th>Entry Price</th>
-                <th>Sui Digest</th>
+                <th>Tx Hash</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {trades.map((trade) => (
-                <tr key={trade.digest}>
+                <tr key={trade.txHash}>
                   <td>EGSI-1H</td>
                   <td className={trade.side === 'long' ? 'positive-text' : 'negative-text'}>
                     {trade.side[0]!.toUpperCase() + trade.side.slice(1)}
                   </td>
                   <td>{trade.quantity}</td>
                   <td>{trade.price.toFixed(2)}</td>
-                  <td title={trade.digest}>{trade.digest.slice(0, 14)}…</td>
+                  <td>
+                    <a href={txExplorerUrl(trade.txHash)} target="_blank" rel="noreferrer" title={trade.txHash}>
+                      {trade.txHash.slice(0, 14)}…
+                    </a>
+                  </td>
                   <td>
                     <span className="session-chip">Executed</span>
                   </td>
@@ -121,10 +123,7 @@ function mergeCandles(apiCandles: Candle[], sessionCandles: Candle[]): Candle[] 
 }
 
 export default function App() {
-  const account = useCurrentAccount();
-
   const [view, setView] = useState<'landing' | 'app'>('landing');
-  const [walletOpen, setWalletOpen] = useState(false);
 
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [apiCandles, setApiCandles] = useState<Candle[]>([]);
@@ -207,13 +206,9 @@ export default function App() {
     setSessionCandles([]);
   }, [intervalSeconds]);
 
-  useEffect(() => {
-    if (account && walletOpen) setWalletOpen(false);
-  }, [account, walletOpen]);
-
   // Ensures the single Markets page is visible, then optionally scrolls
   // to one of its sections. Previously this switched WHICH page was
-  // rendered (market/trade/hedge/analytics as separate views); now there
+  // rendered (market/trade/analytics as separate views); now there
   // is only one page, so this only ever needs to reveal it and scroll.
   function goToMarkets(sectionId?: string) {
     setView('app');
@@ -230,7 +225,6 @@ export default function App() {
     <>
       <AppHeader
         onMarkets={goToMarkets}
-        onConnect={() => setWalletOpen(true)}
         onHome={() => setView('landing')}
       />
 
@@ -249,7 +243,7 @@ export default function App() {
             {historyNotice && <div className="history-notice">{historyNotice}</div>}
 
             {/*
-              All four sections render together on one page now, instead
+              All three sections render together on one page now, instead
               of behind separate tabs where only one was ever visible at
               a time. Each section keeps its own existing markup/classes
               completely unchanged -- only a scroll-target id wrapper is
@@ -279,10 +273,6 @@ export default function App() {
               <SessionPositions trades={sessionTrades} />
             </div>
 
-            <div id="section-hedge">
-              <HedgePage snapshot={snapshot} />
-            </div>
-
             <div id="section-analytics">
               <AnalyticsPage snapshot={snapshot} candles={candles} />
             </div>
@@ -290,15 +280,13 @@ export default function App() {
 
           <footer className="app-footer">
             <span>© 2026 GASX · AI-native Ethereum gas futures</span>
-            <span>Trading on Sui · Hedging on Thetanuts / Base</span>
+            <span>Trading on NEAR · tUSDC collateral</span>
             <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
               Charts by TradingView
             </a>
           </footer>
         </div>
       )}
-
-      <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
 
       {/* Persistent floating assistant, not a nav destination -- reachable
           from the landing page or the app view alike. */}

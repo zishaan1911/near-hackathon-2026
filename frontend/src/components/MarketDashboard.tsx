@@ -261,7 +261,7 @@ export function MarketDashboard({
 
             <div>
               <span>Collateral</span>
-              <b>USDC</b>
+              <b>tUSDC</b>
             </div>
 
             <div>

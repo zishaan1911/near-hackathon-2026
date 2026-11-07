@@ -1,8 +1,4 @@
-import {
-  useCurrentNetwork,
-  useDAppKit,
-  useWalletConnection,
-} from '@mysten/dapp-kit-react';
+import { NEAR_NETWORK, useNear } from '../lib/near';
 import { Brand } from './Brand';
 import { useTheme } from '../theme';
 
@@ -12,12 +8,11 @@ import { useTheme } from '../theme';
 export const MARKET_SECTIONS = [
   { id: 'section-overview', label: 'Overview' },
   { id: 'section-trade', label: 'Trade' },
-  { id: 'section-hedge', label: 'Hedge' },
   { id: 'section-analytics', label: 'Analytics' },
 ] as const;
 
-function shortAddress(address: string) {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+function shortAccountId(accountId: string) {
+  return accountId.length > 18 ? `${accountId.slice(0, 8)}…${accountId.slice(-8)}` : accountId;
 }
 
 function networkLabel(network: string) {
@@ -26,33 +21,28 @@ function networkLabel(network: string) {
 
 export function AppHeader({
   onMarkets,
-  onConnect,
   onHome,
 }: {
   /** Ensures the single Markets page is showing, then scrolls to it.
    * Called both by "Markets" itself and, with a target section, by
-   * each of the four in-page shortcuts. */
+   * each of the in-page shortcuts. */
   onMarkets: (sectionId?: string) => void;
-  onConnect: () => void;
   onHome: () => void;
 }) {
-  const network = useCurrentNetwork();
-  const connection = useWalletConnection();
-  const dAppKit = useDAppKit();
+  const { accountId, ready, connect, disconnect } = useNear();
   const { theme, toggle } = useTheme();
 
-  const walletConnected = connection.status === 'connected' && connection.account !== null;
-  const walletBusy = connection.status === 'connecting' || connection.status === 'reconnecting';
+  const walletConnected = accountId !== null;
 
   const statusText = walletConnected
     ? 'wallet connected'
-    : walletBusy
-      ? 'connecting wallet'
-      : 'configured';
+    : ready
+      ? 'configured'
+      : 'loading wallet';
 
-  async function disconnect() {
+  async function disconnectWallet() {
     try {
-      await dAppKit.disconnectWallet();
+      await disconnect();
     } catch (error) {
       console.error('Wallet disconnect failed', error);
     }
@@ -71,12 +61,8 @@ export function AppHeader({
             labelled way to do the same thing. */}
         <button onClick={onHome}>Home</button>
 
-        {/* All four used to be separate top-level views, each showing only
-            its own page -- clicking "Trade" hid the market overview
-            entirely, and there was no single place that showed
-            everything at once. They now all render together on one
-            Markets page (App.tsx); these buttons just jump to a section
-            of it rather than switching what is rendered. */}
+        {/* These buttons jump to a section of the single Markets page
+            rather than switching what is rendered. */}
         {MARKET_SECTIONS.map((section) => (
           <button key={section.id} onClick={() => onMarkets(section.id)}>
             {section.label}
@@ -96,28 +82,28 @@ export function AppHeader({
 
         <div
           className={`network-pill ${walletConnected ? 'wallet-connected' : 'wallet-disconnected'}`}
-          title={`Selected Sui network: ${network}. ${walletConnected ? 'A wallet is connected.' : 'No browser wallet is connected.'}`}
+          title={`Selected NEAR network: ${NEAR_NETWORK}. ${walletConnected ? 'A wallet is connected.' : 'No browser wallet is connected.'}`}
         >
           <i />
-          <span>Sui {networkLabel(String(network))}</span>
+          <span>NEAR {networkLabel(NEAR_NETWORK)}</span>
           <small className="network-state">{statusText}</small>
         </div>
 
-        {walletConnected && connection.account ? (
+        {walletConnected && accountId ? (
           <div className="account-pill">
             <span>◉</span>
-            {shortAddress(connection.account.address)}
-            <button title="Disconnect wallet" onClick={() => void disconnect()}>
+            {shortAccountId(accountId)}
+            <button title="Disconnect wallet" onClick={() => void disconnectWallet()}>
               ×
             </button>
           </div>
         ) : (
           <button
             className="button button-small button-primary"
-            onClick={onConnect}
-            disabled={walletBusy}
+            onClick={connect}
+            disabled={!ready}
           >
-            {walletBusy ? 'Connecting…' : 'Connect Wallet'}
+            Connect Wallet
           </button>
         )}
       </div>
