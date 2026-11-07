@@ -1,28 +1,26 @@
 /**
- * The C++ order engine, as an off-chain depth and quote layer.
+ * The off-chain depth and quote layer, in pure TypeScript.
  *
- * What this is NOT: a replacement for on-chain matching.
- * `contracts/gasx` remains authoritative for the order book, margin and
- * settlement — every real trade is still a Sui transaction the user's
- * wallet signs. Nothing here moves money or is trusted for settlement.
+ * What this is NOT: a replacement for on-chain matching. The NEAR
+ * contract remains authoritative for the order book, margin and
+ * settlement — every real trade is still a transaction the user's wallet
+ * signs. Nothing here moves money or is trusted for settlement.
  *
- * What it IS: the two things Sui cannot answer cheaply on every UI poll,
- * because each would otherwise be a chain read:
+ * What it does:
  *
- *   1. **Indicative depth** — the best bid/ask a screen needs at 5s
- *      refresh. ARCHITECTURE.md §9's trade flow shows an "orderbook" in
- *      the market-state response, and there is no indexer to build one
- *      from chain events (`indexer/` is still an empty scaffold).
- *   2. **A two-sided quote** derived from the AI forecast, using the
- *      engine's QuoteEngine — spread widening with volatility, size
+ *   1. **Depth** — aggregates the contract's real open orders into price
+ *      levels. This is authoritative chain data (`source: 'chain'`), read
+ *      through the ChainAdapter and cached briefly so UI polling does not
+ *      become an RPC storm.
+ *   2. **A two-sided quote** derived from the AI forecast — a port of the
+ *      former C++ QuoteEngine: spread widening with volatility, size
  *      scaling with confidence, refusal below a confidence floor.
  *
- * Because it is indicative rather than authoritative, every response
- * from here is explicitly labelled as such. A screen showing a price
- * that no chain state backs is a real way to mislead someone, so the
- * label travels with the data rather than living only in this comment.
+ * Depth is real; quotes stay explicitly indicative. A quote is a model's
+ * suggestion, not an executable price, so the label travels with the data
+ * rather than living only in this comment.
  */
-import { Engine, type BookSnapshot, type QuoteResult } from '@gasx/engine';
+import type { ChainAdapter } from '@gasx/near-adapter';
 import type { ForecastDto } from './aiClient.js';
 
 export interface EngineConfig {
@@ -43,111 +41,170 @@ export interface IndicativeQuote {
   indicative: true;
 }
 
-export interface EngineLayer {
-  getBook(): BookSnapshot;
-  quoteFromForecast(forecast: ForecastDto | null, netPosition: number): IndicativeQuote | null;
-  /** Seeds indicative depth. See seedIndicativeBook's own comment for
-   * why this exists and what it is honestly worth. */
-  seedIndicativeBook(quote: IndicativeQuote): void;
+export interface BookLevel {
+  price: number;
+  quantity: number;
+  /** Same value as quantity; the frontend reads depth as `size`. */
+  size: number;
+  /** Number of resting orders aggregated into this level. */
+  orders: number;
 }
 
-export class CppEngineLayer implements EngineLayer {
-  private readonly engine: Engine;
-  private seededOrderIds: number[] = [];
+export interface BestLevel {
+  price: number;
+  quantity: number;
+}
 
-  constructor(config: EngineConfig) {
-    this.engine = new Engine({
-      risk: {
-        contractMultiplier: config.contractMultiplier,
-        marginRatioBps: config.marginRatioBps,
-        maxOrderQuantity: config.maxOrderQuantity,
-        maxNetPosition: config.maxNetPosition,
-      },
-      pricing: {
-        // The engine works in integer price ticks and EGSI is already an
-        // integer 0-1000 index, so no rescaling is needed.
-        priceScale: 1,
-        baseHalfSpread: 5,
-        volatilitySpreadMultiplier: 0.5,
-        minConfidence: config.minConfidence,
-        maxQuoteSize: 100,
-        minQuoteSize: 5,
-      },
-    });
+export interface BookSnapshot {
+  bestBid: BestLevel | null;
+  bestAsk: BestLevel | null;
+  /** Descending by price. */
+  bids: BookLevel[];
+  /** Ascending by price. */
+  asks: BookLevel[];
+  source: 'chain';
+}
+
+export interface EngineLayer {
+  getBook(): Promise<BookSnapshot>;
+  quoteFromForecast(forecast: ForecastDto | null, netPosition: number): IndicativeQuote | null;
+}
+
+/** Fixed pricing constants, carried over from the C++ engine wiring. */
+export interface PricingConfig {
+  priceScale: number;
+  baseHalfSpread: number;
+  volatilitySpreadMultiplier: number;
+  minConfidence: number;
+  maxQuoteSize: number;
+  minQuoteSize: number;
+  inventorySkewPerUnit: number;
+}
+
+export interface ModelQuoteInput {
+  expectedValue: number;
+  volatility: number;
+  confidence: number;
+}
+
+export interface ComputedQuote {
+  fairPrice: number;
+  bid: number;
+  ask: number;
+  size: number;
+}
+
+/** C++ std::llround: round half away from zero. */
+function llround(x: number): number {
+  return x < 0 ? -Math.round(-x) : Math.round(x);
+}
+
+/**
+ * Pure port of QuoteEngine::compute_quote. Returns null when confidence
+ * is below the floor — no quote is the honest answer.
+ */
+export function computeQuote(
+  input: ModelQuoteInput,
+  config: PricingConfig,
+  netPosition = 0,
+): ComputedQuote | null {
+  if (input.confidence < config.minConfidence) return null;
+
+  const fairPrice = llround(input.expectedValue * config.priceScale);
+  const halfSpread = config.baseHalfSpread + llround(input.volatility * config.volatilitySpreadMultiplier);
+
+  // Positive netPosition (long) skews the center down; negative skews up.
+  // fairPrice itself stays the model's unskewed view.
+  const skew = netPosition * config.inventorySkewPerUnit;
+  const bid = fairPrice - halfSpread - skew;
+  const ask = fairPrice + halfSpread - skew;
+
+  // Linear interpolation of size between min (at the floor) and max (at 1.0).
+  const span = 1 - config.minConfidence;
+  const t = span > 0 ? (input.confidence - config.minConfidence) / span : 1;
+  const clampedT = Math.min(1, Math.max(0, t));
+  const size = config.minQuoteSize + llround(clampedT * (config.maxQuoteSize - config.minQuoteSize));
+
+  return { fairPrice, bid, ask, size };
+}
+
+const BOOK_CACHE_MS = 4000;
+const BOOK_ORDER_LIMIT = 200;
+
+export class OnChainEngineLayer implements EngineLayer {
+  private readonly pricing: PricingConfig;
+  private cache: { at: number; book: BookSnapshot } | null = null;
+
+  constructor(
+    config: EngineConfig,
+    private readonly chain: Pick<ChainAdapter, 'getOpenOrders'>,
+    private readonly now: () => number = Date.now,
+  ) {
+    this.pricing = {
+      // EGSI is already an integer 0-1000 index, so no rescaling.
+      priceScale: 1,
+      baseHalfSpread: 5,
+      volatilitySpreadMultiplier: 0.5,
+      minConfidence: config.minConfidence,
+      maxQuoteSize: 100,
+      minQuoteSize: 5,
+      inventorySkewPerUnit: 0,
+    };
   }
 
-  getBook(): BookSnapshot {
-    return this.engine.getBookSnapshot();
+  async getBook(): Promise<BookSnapshot> {
+    const t = this.now();
+    if (this.cache && t - this.cache.at < BOOK_CACHE_MS) return this.cache.book;
+
+    const orders = await this.chain.getOpenOrders({ limit: BOOK_ORDER_LIMIT });
+    const bidMap = new Map<number, BookLevel>();
+    const askMap = new Map<number, BookLevel>();
+    for (const order of orders) {
+      if (order.status !== 'open' || order.quantity <= 0) continue;
+      const map = order.isBid ? bidMap : askMap;
+      const level = map.get(order.price);
+      if (level) {
+        level.quantity += order.quantity;
+        level.size += order.quantity;
+        level.orders += 1;
+      } else {
+        map.set(order.price, { price: order.price, quantity: order.quantity, size: order.quantity, orders: 1 });
+      }
+    }
+
+    const bids = [...bidMap.values()].sort((a, b) => b.price - a.price);
+    const asks = [...askMap.values()].sort((a, b) => a.price - b.price);
+    const book: BookSnapshot = {
+      bestBid: bids[0] ? { price: bids[0].price, quantity: bids[0].quantity } : null,
+      bestAsk: asks[0] ? { price: asks[0].price, quantity: asks[0].quantity } : null,
+      bids,
+      asks,
+      source: 'chain',
+    };
+    this.cache = { at: t, book };
+    return book;
   }
 
   /**
-   * Turns the AI service's forecast into a two-sided quote via the
-   * engine's QuoteEngine. Returns null when the engine refuses — below
-   * its confidence floor, no quote is the honest answer, and that
-   * refusal is deliberately not overridden here.
+   * Turns the AI service's forecast into a two-sided quote. Returns null
+   * when below the confidence floor; that refusal is not overridden.
    */
   quoteFromForecast(forecast: ForecastDto | null, netPosition: number): IndicativeQuote | null {
     if (!forecast) return null;
 
-    const result: QuoteResult = this.engine.getQuote({
-      market: forecast.market,
-      expectedValue: forecast.expected_egsi,
-      // The forecast carries no explicit volatility, so it is derived
-      // from confidence: a less confident forecast implies a wider
-      // plausible range, which should widen the spread. Crude, and
-      // stated as such rather than dressed up as a volatility model.
-      volatility: (1 - forecast.confidence) * 100,
-      confidence: forecast.confidence,
-      tailProbability: forecast.p_tail_500,
-      modelVersion: forecast.model_version,
+    const result = computeQuote(
+      {
+        expectedValue: forecast.expected_egsi,
+        // The forecast carries no explicit volatility, so it is derived
+        // from confidence: a less confident forecast implies a wider
+        // plausible range. Crude, and stated as such.
+        volatility: (1 - forecast.confidence) * 100,
+        confidence: forecast.confidence,
+      },
+      this.pricing,
       netPosition,
-    });
-
-    if (!result.hasQuote) return null;
-    return {
-      bid: result.bid!,
-      ask: result.ask!,
-      fairPrice: result.fairPrice!,
-      size: result.size!,
-      indicative: true,
-    };
-  }
-
-  /**
-   * Places the quote into the engine's own book so the UI has depth to
-   * render.
-   *
-   * Being blunt about what this is: with no indexer, there are no real
-   * resting orders to show, so this is GASX quoting to itself. It gives
-   * the screen a live, forecast-driven book rather than an empty one,
-   * and every price it produces is marked indicative. It is not a claim
-   * that anyone will trade at these levels.
-   *
-   * Previous seeds are cancelled first, so the book tracks the current
-   * forecast instead of accumulating stale levels.
-   */
-  seedIndicativeBook(quote: IndicativeQuote): void {
-    for (const orderId of this.seededOrderIds) {
-      this.engine.cancelOrder(orderId);
-    }
-    this.seededOrderIds = [];
-
-    // Margin is set high enough that the engine's pre-trade risk check
-    // never rejects a seed. That check protects real traders; here it
-    // would only stop the screen from rendering.
-    const margin = Number.MAX_SAFE_INTEGER / 4;
-    for (const [isBid, price] of [
-      [true, quote.bid],
-      [false, quote.ask],
-    ] as const) {
-      const placed = this.engine.placeOrder({
-        traderId: 'gasx-indicative',
-        isBid,
-        price,
-        quantity: quote.size,
-        availableMargin: margin,
-      });
-      if (placed.accepted) this.seededOrderIds.push(placed.orderId);
-    }
+    );
+    if (!result) return null;
+    return { bid: result.bid, ask: result.ask, fairPrice: result.fairPrice, size: result.size, indicative: true };
   }
 }

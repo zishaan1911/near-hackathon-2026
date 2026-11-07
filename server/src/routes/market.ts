@@ -90,15 +90,14 @@ export function registerMarketRoutes(app: FastifyInstance, deps: GatewayDeps): v
       }
     }
 
-    // Indicative depth and quote from the C++ engine. Explicitly not
-    // authoritative: contracts/gasx owns the real book, and there is no
-    // indexer to read it from yet. Marked as indicative in the payload.
+    // Depth is real: aggregated from on-chain open orders (authoritative,
+    // `source: 'chain'`). The quote is a model suggestion and stays
+    // labelled indicative in the payload.
     let orderbook = null;
     let quote = null;
     if (deps.engine) {
       quote = deps.engine.quoteFromForecast(forecast, 0);
-      if (quote) deps.engine.seedIndicativeBook(quote);
-      orderbook = { ...deps.engine.getBook(), indicative: true as const };
+      orderbook = { ...(await deps.engine.getBook()), indicative: true as const };
     }
 
     return { market, egsi, forecast, orderbook, quote };

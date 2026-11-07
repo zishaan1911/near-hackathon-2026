@@ -16,6 +16,7 @@ import { registerAccountRoutes } from './routes/account.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerMarketRoutes } from './routes/market.js';
 import { registerOrderRoutes } from './routes/orders.js';
+import { registerTickRoute, type TickRouteDeps } from './tick-route.js';
 
 export interface GatewayDeps {
   chainAdapter: ChainAdapter;
@@ -30,6 +31,8 @@ export interface GatewayDeps {
   /** Null when no database is configured; every call site treats
    * persistence as optional. */
   db?: Database | null;
+  /** Cron tick wiring. Omitted, the tick route is not registered. */
+  tick?: TickRouteDeps | null;
   /** Defaults to true. Tests pass false to keep output clean. */
   logger?: boolean;
 }
@@ -43,6 +46,7 @@ export function buildServer(deps: GatewayDeps): FastifyInstance {
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
   registerChatRoutes(app, deps);
+  if (deps.tick) registerTickRoute(app, deps.tick);
 
   // AiServiceError (POST /cycle failed or was unreachable) maps to 502 —
   // this gateway's fault lies with an upstream dependency, not the

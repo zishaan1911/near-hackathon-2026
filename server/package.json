@@ -2,7 +2,7 @@
   "name": "@gasx/api",
   "version": "0.1.0",
   "private": true,
-  "description": "GASX API gateway (ARCHITECTURE.md \u00a72, \u00a79): REST endpoints for market state, order/account transaction preparation on NEAR. Enforces ARCHITECTURE.md \u00a78's hard risk policy on order preparation.",
+  "description": "GASX API gateway (ARCHITECTURE.md §2, §9): REST endpoints for market state, order/account transaction preparation on NEAR. Enforces ARCHITECTURE.md §8's hard risk policy on order preparation.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -18,8 +18,7 @@
   "dependencies": {
     "@gasx/near-adapter": "file:../blockchain/near",
     "fastify": "^5.12.1",
-    "mysql2": "^3.24.2",
-    "@gasx/engine": "file:../engine/binding"
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
