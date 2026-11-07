@@ -1,0 +1,62 @@
+# Environment
+.env
+.env.local
+*.local
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# C++
+*.o
+*.obj
+*.out
+*.exe
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+engine/build/
+
+# Move / Sui
+contracts/**/build/
+.sui/
+
+# AI — trained model artifacts (regenerate with `python -m inference.train`;
+# see ai/README.md). Never commit a trained model as if it were reviewed,
+# versioned source.
+ai/models/*
+!ai/models/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/
+logs/
+
+
+# Move CLI per-machine publish record -- never project state, and
+# committing it would make every clone fight over reusing one publish.
+Published.toml
+**/build/*/Published.toml
+*.pubfile.json

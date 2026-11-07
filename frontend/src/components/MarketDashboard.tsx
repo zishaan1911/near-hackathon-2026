@@ -1,0 +1,305 @@
+import type { MarketSnapshot } from '../lib/api';
+import {
+  bandLabel,
+  formatComponent,
+  formatConfidence,
+  stressBand,
+  timeToExpiry,
+} from '../lib/egsi';
+import { EgsiGauge } from './EgsiGauge';
+
+function driverLabel(key: string) {
+  return key
+    .replace(/[_-]/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function ForecastSlope({ current, expected }: { current: number; expected: number }) {
+  const width = 420;
+  const height = 120;
+  const horizontalPadding = 16;
+  const verticalPadding = 18;
+
+  const difference = expected - current;
+  const extraRange = Math.max(Math.abs(difference) * 0.4, 35);
+  const domainMin = Math.min(current, expected) - extraRange;
+  const domainMax = Math.max(current, expected) + extraRange;
+  const domainRange = Math.max(1, domainMax - domainMin);
+
+  const yFor = (value: number) =>
+    verticalPadding +
+    ((domainMax - value) / domainRange) *
+      (height - verticalPadding * 2);
+
+  const startX = horizontalPadding;
+  const endX = width - horizontalPadding;
+  const startY = yFor(current);
+  const endY = yFor(expected);
+
+  // Smooth interpolation only communicates direction between the two
+  // model values. It is not presented as extra model observations.
+  const controlOneX = width * 0.36;
+  const controlTwoX = width * 0.68;
+
+  const linePath = [
+    `M ${startX} ${startY}`,
+    `C ${controlOneX} ${startY},`,
+    `${controlTwoX} ${endY},`,
+    `${endX} ${endY}`,
+  ].join(' ');
+
+  const areaPath = `${linePath} L ${endX} ${height} L ${startX} ${height} Z`;
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffb63d" stopOpacity=".26" />
+          <stop offset="1" stopColor="#ffb63d" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      <line
+        x1={startX}
+        y1={startY}
+        x2={endX}
+        y2={startY}
+        stroke="#243443"
+        strokeWidth="1"
+        strokeDasharray="5 6"
+      />
+
+      <path d={areaPath} fill="url(#forecastFill)" />
+      <path
+        d={linePath}
+        fill="none"
+        stroke="#ffb63d"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+
+      <circle cx={startX} cy={startY} r="4" fill="#ffcc77" />
+      <circle cx={endX} cy={endY} r="5" fill="#fff4e0" stroke="#ffb020" strokeWidth="2" />
+    </svg>
+  );
+}
+
+export function MarketDashboard({
+  snapshot,
+  loading,
+  error,
+  onTrade,
+}: {
+  snapshot: MarketSnapshot | null;
+  loading: boolean;
+  error: string;
+  onTrade: () => void;
+}) {
+  if (!snapshot) {
+    return (
+      <div className="screen-state card">
+        {loading ? 'Loading live market…' : error || 'No market data available.'}
+      </div>
+    );
+  }
+
+  const { egsi, forecast, market, quote } = snapshot;
+  const band = stressBand(egsi.score);
+
+  const drivers = Object.entries(egsi.components)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const expiry = market.expiryMs ? timeToExpiry(market.expiryMs) : null;
+  const price = quote.mid ?? forecast.expected;
+
+  const forecastDelta = forecast.expected - egsi.score;
+  const forecastDeltaRounded = Math.round(forecastDelta);
+
+  const forecastDirection: 'up' | 'down' | 'flat' =
+    forecastDelta > 0.5
+      ? 'up'
+      : forecastDelta < -0.5
+        ? 'down'
+        : 'flat';
+
+  const forecastDeltaLabel =
+    forecastDeltaRounded > 0
+      ? `+${forecastDeltaRounded}`
+      : `${forecastDeltaRounded}`;
+
+  const forecastDirectionLabel =
+    forecastDirection === 'up'
+      ? 'Rising'
+      : forecastDirection === 'down'
+        ? 'Cooling'
+        : 'Stable';
+
+  return (
+    <div className="dashboard-page">
+      <div className="dashboard-top-grid">
+        <section className="card gauge-card">
+          <div className="card-heading">
+            <div>
+              <span className="section-kicker">LIVE INDEX</span>
+              <h2>Ethereum Gas Stress Index (EGSI)</h2>
+            </div>
+
+            <span className="live-badge">
+              <i /> Live
+            </span>
+          </div>
+
+          <EgsiGauge score={egsi.score} />
+        </section>
+      </div>
+
+      <div className="dashboard-bottom-grid">
+        <section className="card drivers-card">
+          <div className="card-heading">
+            <h2>Key Drivers</h2>
+          </div>
+
+          <div className="driver-list">
+            {drivers.length ? (
+              drivers.map(([name, value]) => (
+                <div className="driver" key={name}>
+                  <div>
+                    <span className="driver-icon">⌁</span>
+                    <span>{driverLabel(name)}</span>
+                    <b>{formatComponent(value)}</b>
+                  </div>
+
+                  <div className="driver-track">
+                    <span
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(2, value * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="muted-empty">
+                No component breakdown returned by the AI service.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="card forecast-card">
+          <div className="card-heading">
+            <div>
+              <span className="section-kicker">AI FORECAST</span>
+              <h2>Next 1 Hour</h2>
+            </div>
+          </div>
+
+          {/* Important values are kept outside the chart so they stay readable. */}
+          <div className="forecast-summary-row">
+            <div className="forecast-stat-card">
+              <span>Now</span>
+              <strong>{Math.round(egsi.score)}</strong>
+              <small>Live EGSI</small>
+            </div>
+
+            <div className="forecast-stat-card emphasis">
+              <span>Expected</span>
+              <strong>{Math.round(forecast.expected)}</strong>
+              <small>In 1 hour</small>
+            </div>
+
+            <div className={`forecast-delta-pill ${forecastDirection}`}>
+              <span>1H Change</span>
+              <strong>{forecastDeltaLabel}</strong>
+              <small>{forecastDirectionLabel}</small>
+            </div>
+          </div>
+
+          <div className="forecast-visual">
+            <ForecastSlope
+              current={egsi.score}
+              expected={forecast.expected}
+            />
+          </div>
+
+          <div className="forecast-legend">
+            <span>
+              <i className="blue-dot" />
+              Model {forecast.modelVersion}
+            </span>
+
+            <span>
+              P(EGSI &gt; 500){' '}
+              <b>{formatConfidence(forecast.tailProbability)}</b>
+            </span>
+          </div>
+        </section>
+
+        <section className="card market-overview-card">
+          <div className="card-heading">
+            <h2>Market Overview</h2>
+          </div>
+
+          <div className="overview-list">
+            <div>
+              <span>Market</span>
+              <b>{market.label}</b>
+            </div>
+
+            <div>
+              <span>Indicative price</span>
+              <b>{Number.isFinite(price) ? price.toFixed(1) : '—'}</b>
+            </div>
+
+            <div>
+              <span>Collateral</span>
+              <b>USDC</b>
+            </div>
+
+            <div>
+              <span>Expiry</span>
+              <b>{expiry ?? '1-hour market'}</b>
+            </div>
+
+            <div>
+              <span>Oracle</span>
+              <b className="positive-text">Live</b>
+            </div>
+          </div>
+
+          <button
+            className="button button-primary overview-action"
+            onClick={onTrade}
+          >
+            Trade EGSI-1H →
+          </button>
+        </section>
+      </div>
+
+      <div className={`market-status-banner status-${band}`}>
+        <div className="status-symbol">
+          {band === 'nominal' ? '✓' : '!'}
+        </div>
+
+        <div>
+          <b>Market is {bandLabel(band).toLowerCase()}</b>
+          <span>
+            {band === 'nominal'
+              ? 'Gas conditions are stable. Monitor for changes in network activity.'
+              : 'AI forecast and network drivers indicate elevated blockspace stress.'}
+          </span>
+        </div>
+
+        <span className="status-score">EGSI {Math.round(egsi.score)}</span>
+      </div>
+    </div>
+  );
+}
