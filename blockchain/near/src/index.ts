@@ -23,3 +23,7 @@ export { loadConfigFromEnv, type NearAdapterConfig } from './config.js';
 export { DevMarketUnavailableError, NearChainAdapter } from './nearAdapter.js';
 export { viewCall } from './client.js';
 export { fetchDevMarketState } from './devMarket.js';
+export { createSigner } from './signer.js';
+export { findMatches, type OrderLike } from './matcher.js';
+export { toOraclePrice } from './publisher.js';
+export { nextExpiryMs, runTick, type TickContext, type TickReport, type ViewFn } from './tick.js';
