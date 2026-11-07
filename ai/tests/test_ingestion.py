@@ -1,14 +1,14 @@
 from unittest.mock import MagicMock
 
-from ingestion.ethereum import EthereumIngestionClient
+from ingestion.ethereum import EthereumIngestionClient, parse_block
 
 
-def make_client_with_mock_w3(mock_w3) -> EthereumIngestionClient:
-    # Constructing with a dummy URL is safe — Web3(HTTPProvider(url))
-    # doesn't make any network call until a request is issued, but we
-    # replace _w3 entirely anyway so no real HTTPProvider is ever used.
+def make_client_with_mock_rpc(mock_rpc) -> EthereumIngestionClient:
+    # Constructing with a dummy URL is safe — nothing touches the network
+    # until _rpc() is called, and we replace _rpc entirely anyway so no
+    # real HTTP request is ever made.
     client = EthereumIngestionClient(rpc_url="http://localhost:0")
-    client._w3 = mock_w3
+    client._rpc = mock_rpc
     return client
 
 
@@ -17,25 +17,25 @@ def make_tx(to: str | None):
 
 
 def test_fetch_latest_metrics_shapes_a_raw_metrics_object():
-    mock_w3 = MagicMock()
-    mock_w3.eth.get_block.return_value = {
-        "number": 12345,
-        "timestamp": 1_700_000_000,
-        "baseFeePerGas": 25_000_000_000,
-        "gasUsed": 14_000_000,
-        "gasLimit": 30_000_000,
+    latest = {
+        "number": hex(12345),
+        "timestamp": hex(1_700_000_000),
+        "baseFeePerGas": hex(25_000_000_000),
+        "gasUsed": hex(14_000_000),
+        "gasLimit": hex(30_000_000),
         "transactions": [
             make_tx("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"),  # DEX
             make_tx("0x0000000000000000000000000000000000dEaD"),  # not DEX
             make_tx(None),  # contract creation
         ],
     }
-    mock_w3.eth.fee_history.return_value = {
-        "baseFeePerGas": [20_000_000_000, 21_000_000_000, 25_000_000_000]  # last is the trailing projected entry
+    responses = {
+        "eth_getBlockByNumber": latest,
+        # last entry is the trailing projected entry
+        "eth_feeHistory": {"baseFeePerGas": [hex(20_000_000_000), hex(21_000_000_000), hex(25_000_000_000)]},
+        "txpool_status": {"pending": "0x64"},  # 100
     }
-    mock_w3.provider.make_request.return_value = {"result": {"pending": "0x64"}}  # 100
-
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock(side_effect=lambda method, params: responses[method]))
     metrics = client.fetch_latest_metrics()
 
     assert metrics.block_number == 12345
@@ -46,12 +46,11 @@ def test_fetch_latest_metrics_shapes_a_raw_metrics_object():
     assert metrics.block_tx_count == 3
     assert metrics.dex_tx_count == 1
     assert metrics.pending_tx_count == 100
+    assert metrics.base_fee_history_wei == [20_000_000_000, 21_000_000_000]
 
 
 def test_fee_history_trims_the_trailing_projected_entry():
-    mock_w3 = MagicMock()
-    mock_w3.eth.fee_history.return_value = {"baseFeePerGas": [1, 2, 3, 4]}
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock(return_value={"baseFeePerGas": ["0x1", "0x2", "0x3", "0x4"]}))
 
     history = client._fetch_base_fee_history()
 
@@ -59,48 +58,56 @@ def test_fee_history_trims_the_trailing_projected_entry():
 
 
 def test_dex_transaction_matching_is_case_insensitive():
-    mock_w3 = MagicMock()
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock())
     transactions = [
         make_tx("0x7A250D5630b4CF539739DF2C5DACB4C659F2488D"),  # different case, same address
         make_tx("0xnotarealdexaddress00000000000000000000"),
     ]
 
-    count = client._count_dex_transactions(transactions)
-
-    assert count == 1
+    assert client._count_dex_transactions(transactions) == 1
 
 
 def test_dex_transaction_matching_handles_none_to_address():
-    mock_w3 = MagicMock()
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock())
     transactions = [make_tx(None), make_tx(None)]
 
     assert client._count_dex_transactions(transactions) == 0
 
 
 def test_pending_tx_count_falls_back_to_zero_when_txpool_unsupported():
-    mock_w3 = MagicMock()
-    mock_w3.provider.make_request.side_effect = Exception("method not supported")
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock(side_effect=Exception("method not supported")))
 
     assert client._fetch_pending_tx_count() == 0
 
 
 def test_pending_tx_count_falls_back_to_zero_on_missing_result_shape():
-    mock_w3 = MagicMock()
-    mock_w3.provider.make_request.return_value = {"unexpected": "shape"}
-    client = make_client_with_mock_w3(mock_w3)
+    client = make_client_with_mock_rpc(MagicMock(return_value={"unexpected": "shape"}))
 
     assert client._fetch_pending_tx_count() == 0
 
 
 def test_custom_history_window_is_passed_to_fee_history():
-    mock_w3 = MagicMock()
-    mock_w3.eth.fee_history.return_value = {"baseFeePerGas": [1, 2]}
+    mock_rpc = MagicMock(return_value={"baseFeePerGas": ["0x1", "0x2"]})
     client = EthereumIngestionClient(rpc_url="http://localhost:0", history_window_blocks=7)
-    client._w3 = mock_w3
+    client._rpc = mock_rpc
 
     client._fetch_base_fee_history()
 
-    mock_w3.eth.fee_history.assert_called_once_with(7, "latest")
+    mock_rpc.assert_called_once_with("eth_feeHistory", [hex(7), "latest", []])
+
+
+def test_parse_block_decodes_hex_fields():
+    sample = parse_block(
+        {
+            "number": "0x10",
+            "timestamp": "0x20",
+            "baseFeePerGas": "0x30",
+            "gasUsed": "0x40",
+            "gasLimit": "0x50",
+            "transactions": [make_tx("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"), make_tx(None)],
+        }
+    )
+
+    assert (sample.number, sample.timestamp, sample.base_fee_wei) == (16, 32, 48)
+    assert (sample.gas_used, sample.gas_limit) == (64, 80)
+    assert (sample.block_tx_count, sample.dex_tx_count) == (2, 1)

@@ -1,0 +1,7 @@
+# Slim runtime deps for the Vercel Python function (api/ai.py). The full
+# local stack (lightgbm, pandas, web3, ...) stays in ai/requirements.txt.
+fastapi==0.141.1
+pydantic>=2,<3
+pydantic-settings==2.15.0
+numpy==2.5.2
+httpx==0.28.1

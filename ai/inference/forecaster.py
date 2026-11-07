@@ -23,11 +23,14 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import lightgbm as lgb
 import numpy as np
 
 from schemas import ForecastOutput
+
+if TYPE_CHECKING:  # lightgbm is imported lazily — absent in the slim Vercel build
+    import lightgbm as lgb
 
 MODEL_VERSION = "egsi-v1"
 
@@ -174,6 +177,11 @@ def load_trained_model(models_dir, allow_unvalidated: bool = False) -> TrainedMo
         return None
 
     try:
+        import lightgbm as lgb  # lazy: not installed in the slim Vercel build
+    except ImportError:
+        return None
+
+    try:
         metadata = json.loads(metadata_path.read_text())
         beats_baseline = metadata.get("beats_baseline", False)
         if not beats_baseline and not allow_unvalidated:
@@ -208,6 +216,8 @@ def train(
     train/test split and which baseline(s) to compare against — this
     just fits and evaluates.
     """
+    import lightgbm as lgb  # lazy: training needs it, serving does not
+
     params_common = {"objective": "quantile", "verbosity": -1, "min_data_in_leaf": 5}
 
     median_model = lgb.train({**params_common, "alpha": 0.5}, lgb.Dataset(X_train, label=y_train))
