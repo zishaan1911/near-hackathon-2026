@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Congest">
-  <rect x="6" y="38" width="12" height="20" rx="3" fill="#00e5a0" opacity=".55"/>
-  <rect x="22" y="28" width="12" height="30" rx="3" fill="#00e5a0" opacity=".8"/>
-  <rect x="38" y="16" width="12" height="42" rx="3" fill="#00e5a0"/>
-  <path d="M6 30 L24 20 L34 24 L56 6" fill="none" stroke="#ffb020" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="56" cy="6" r="3.5" fill="#ffb020"/>
-</svg>

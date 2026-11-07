@@ -3,7 +3,7 @@ function EthereumCrystal() {
     <div className="crystal-stage" aria-hidden="true">
       <div className="orbit orbit-a" />
       <div className="orbit orbit-b" />
-      <img className="eth-crystal" src="/logo.svg" alt="" />
+      <img className="eth-crystal" src="/logo.png" alt="" />
       <div className="float-card float-predict"><b>✦ Predict</b><span>AI-powered forecasts</span></div>
       <div className="float-card float-trade"><b>↗ Trade</b><span>Gas futures on NEAR</span></div>
     </div>
