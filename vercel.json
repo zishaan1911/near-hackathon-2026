@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "buildCommand": "npm --prefix blockchain/near ci && npm --prefix blockchain/near run build && npm --prefix server ci && npm --prefix frontend ci && npm --prefix frontend run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "echo skip",
+  "functions": {
+    "api/index.ts": { "maxDuration": 60, "includeFiles": "{server,blockchain/near}/**" },
+    "api/ai.py": { "maxDuration": 30, "includeFiles": "ai/**" }
+  },
+  "rewrites": [
+    { "source": "/api/v1/(.*)", "destination": "/api/index" },
+    { "source": "/api/ai/(.*)", "destination": "/api/ai" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

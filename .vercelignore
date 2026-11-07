@@ -1,0 +1,6 @@
+node_modules
+contracts/*/target
+engine
+deploy
+*.log
+database
