@@ -1,3 +1,5 @@
+import type { FunctionCallAction } from '@near-wallet-selector/core';
+
 export type JsonObject = Record<string, unknown>;
 
 export interface Candle {
@@ -34,6 +36,7 @@ export interface MarketSnapshot {
     oracleHasPrice: boolean;
     oraclePrice: number;
     oracleFresh: boolean;
+    settled: boolean;
   };
   quote: {
     bid?: number;
@@ -273,6 +276,7 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
       oracleFresh:
         bool(oracleObj, ['hasPrice', 'has_price'], false) &&
         bool(oracleObj, ['isFreshApprox', 'is_fresh_approx', 'fresh'], false),
+      settled: bool(market, ['settled', 'is_settled', 'isSettled'], false),
     },
     quote: {
       bid: Number.isFinite(bid) ? bid : undefined,
@@ -428,81 +432,117 @@ export async function getCandles(intervalSeconds?: number): Promise<Candle[]> {
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
-export interface PrepareOrderInput {
-  marketId: string;
-  accountId: string;
+/**
+ * What the gateway's prepare endpoints return: one NEAR function call to be
+ * signed by the trader's wallet. Amounts are already in base units.
+ */
+export interface PreparedTransaction {
+  receiverId: string;
+  actions: FunctionCallAction[];
+  summary: Record<string, string | number | boolean>;
+}
+
+export interface OrderView {
+  orderId: number;
+  marketId: number;
   owner: string;
-  side: 'long' | 'short';
+  isBid: boolean;
+  price: number;
+  quantity: number;
+  lockedMargin: string;
+  status: 'open' | 'filled' | 'cancelled';
+}
+
+export interface TradeView {
+  tradeId: number;
+  marketId: number;
+  buyer: string;
+  seller: string;
+  price: number;
+  quantity: number;
+  buyerCommitted: string;
+  sellerCommitted: string;
+  buyerClaimed: boolean;
+  sellerClaimed: boolean;
+}
+
+export interface AccountView {
+  accountId: string;
+  /** Token base units (tUSDC, 6 decimals). */
+  available: string;
+  locked: string;
+  openOrders: OrderView[];
+  orders: OrderView[];
+  trades: TradeView[];
+}
+
+async function preparePost(path: string, body: object): Promise<PreparedTransaction> {
+  const payload = await request(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  if (!isRecord(payload) || typeof payload.receiverId !== 'string' || !Array.isArray(payload.actions)) {
+    throw new Error('Gateway approved the request but did not return a NEAR transaction.');
+  }
+
+  return payload as unknown as PreparedTransaction;
+}
+
+export interface PrepareOrderInput {
+  trader: string;
+  isBid: boolean;
   price: number;
   quantity: number;
 }
 
-export async function prepareOrder(
-  input: PrepareOrderInput,
-): Promise<{ transaction: string; raw: unknown }> {
-  // The real gateway (api/src/routes/orders.ts's validatePrepareOrderBody)
-  // requires EXACTLY { trader, marginAccountId, isBid, price, quantity } --
-  // no marketId field at all (there is only one market), isBid a real
-  // boolean rather than a side string. None of this function's previous
-  // three guessed variants (owner/side, market_id/side, sender/size)
-  // matched that shape, so every order submission was rejected by the
-  // gateway's own validation with 400 before ever reaching the chain
-  // adapter -- placing an order could never succeed. This is the one,
-  // verified-correct shape; postVariants's guess-and-retry is no longer
-  // needed for this call.
-  const payload = await request('/api/v1/orders/prepare', {
-    method: 'POST',
-    body: JSON.stringify({
-      trader: input.owner,
-      marginAccountId: input.accountId,
-      isBid: input.side === 'long',
-      price: input.price,
-      quantity: input.quantity,
-    }),
-  });
-
-  const root = rec(payload);
-  const transaction = first(root, [
-    'transactionJson',
-    'transaction',
-    'transaction_bytes',
-    'transactionBytes',
-    'tx_bytes',
-    'bytes',
-    'serializedTransaction',
-  ]);
-
-  if (typeof transaction !== 'string' || !transaction) {
-    throw new Error(
-      'Gateway approved the order but did not return serialized transaction bytes.',
-    );
-  }
-
-  return { transaction, raw: payload };
+export function prepareOrder(input: PrepareOrderInput): Promise<PreparedTransaction> {
+  return preparePost('/api/v1/orders/prepare', input);
 }
 
-// The real gateway (api/src/routes/hedge.ts's validateExposureBody)
-// requires EXACTLY { netContracts: number, egsiLevel: number }. It never
-// accepted a `market` field (there is only one market) or `assessment`
-// (evaluate recomputes exposure itself; it does not take a previous
-// result as input), and never recognised netPosition/net_position/
-// position -- none of the three previously-guessed shapes for either
-// call included egsiLevel at all, so every assess/evaluate request was
-// rejected with 400 before any real exposure math ran. egsiLevel must be
-// the CURRENT EGSI score (the caller has to have it already -- see
-// HedgePage, which now passes snapshot.egsi.score).
-export async function assessHedge(netContracts: number, egsiLevel: number): Promise<unknown> {
-  return request('/api/v1/hedge/assess', {
-    method: 'POST',
-    body: JSON.stringify({ netContracts, egsiLevel }),
-  });
+export interface PrepareCancelInput {
+  trader: string;
+  orderId: number;
 }
 
-export async function evaluateHedge(netContracts: number, egsiLevel: number): Promise<unknown> {
-  return request('/api/v1/hedge/evaluate', {
-    method: 'POST',
-    body: JSON.stringify({ netContracts, egsiLevel }),
-  });
+export function prepareCancel(input: PrepareCancelInput): Promise<PreparedTransaction> {
+  return preparePost('/api/v1/orders/prepare-cancel', input);
+}
+
+export interface PrepareAmountInput {
+  trader: string;
+  /** Token base units, as a decimal string. */
+  amount: string;
+}
+
+export function prepareDeposit(input: PrepareAmountInput): Promise<PreparedTransaction> {
+  return preparePost('/api/v1/account/prepare-deposit', input);
+}
+
+export function prepareWithdraw(input: PrepareAmountInput): Promise<PreparedTransaction> {
+  return preparePost('/api/v1/account/prepare-withdraw', input);
+}
+
+export interface PrepareClaimInput {
+  trader: string;
+  tradeId: number;
+}
+
+export function prepareClaim(input: PrepareClaimInput): Promise<PreparedTransaction> {
+  return preparePost('/api/v1/trades/prepare-claim', input);
+}
+
+export async function getAccount(accountId: string): Promise<AccountView> {
+  const root = rec(await request(`/api/v1/account/${encodeURIComponent(accountId)}`));
+
+  return {
+    accountId: str(root, ['accountId'], accountId),
+    available: str(root, ['available'], '0'),
+    locked: str(root, ['locked'], '0'),
+    openOrders: (root.openOrders as OrderView[] | undefined) ?? [],
+    orders: (root.orders as OrderView[] | undefined) ?? [],
+    trades: (root.trades as TradeView[] | undefined) ?? [],
+  };
 }
 
 export function pretty(value: unknown): string {
