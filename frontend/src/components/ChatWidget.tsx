@@ -64,7 +64,7 @@ export function ChatWidget() {
           <div className="chat-messages" ref={scrollRef}>
             {messages.length === 0 && (
               <div className="chat-empty">
-                <p>Hi! I can explain how GASX works, or tell you the current EGSI and forecast.</p>
+                <p>Hi! I can explain how Congest works, or tell you the current EGSI and forecast.</p>
                 <p>Try: &ldquo;What is EGSI?&rdquo; or &ldquo;What&rsquo;s the current gas stress level?&rdquo;</p>
               </div>
             )}

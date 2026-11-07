@@ -35,7 +35,7 @@ function createSelection() {
     selector,
     modal: setupModal(selector, {
       theme: 'auto',
-      description: 'Connect a NEAR wallet to trade GASX.',
+      description: 'Connect a NEAR wallet to trade Congest.',
     }),
   }));
 }

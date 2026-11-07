@@ -138,7 +138,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   async function submit() {
     if (!accountId || !market) return;
     setBusy(true);
-    setMessage('Preparing transaction through GASX risk checks…');
+    setMessage('Preparing transaction through Congest risk checks…');
     // The scaling convention lives entirely at this one boundary: what
     // the trader sees and edits is displayQuantity (e.g. 0.05); what
     // goes on-chain is this integer, and the gateway/Move contract never
@@ -200,7 +200,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
               <div className="field-static">
                 {effectivePrice.toFixed(0)}
                 <small>
-                  Fills at the current reference price. GASX's on-chain book matches orders in a
+                  Fills at the current reference price. Congest's on-chain book matches orders in a
                   separate step, so this places the order at that price rather than guaranteeing
                   an instant fill.
                 </small>

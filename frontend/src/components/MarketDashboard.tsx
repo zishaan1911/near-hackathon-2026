@@ -58,8 +58,8 @@ function ForecastSlope({ current, expected }: { current: number; expected: numbe
     >
       <defs>
         <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffb63d" stopOpacity=".26" />
-          <stop offset="1" stopColor="#ffb63d" stopOpacity="0" />
+          <stop offset="0" stopColor="#00e5a0" stopOpacity=".26" />
+          <stop offset="1" stopColor="#00e5a0" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -77,13 +77,13 @@ function ForecastSlope({ current, expected }: { current: number; expected: numbe
       <path
         d={linePath}
         fill="none"
-        stroke="#ffb63d"
+        stroke="#00e5a0"
         strokeWidth="3"
         strokeLinecap="round"
       />
 
-      <circle cx={startX} cy={startY} r="4" fill="#ffcc77" />
-      <circle cx={endX} cy={endY} r="5" fill="#fff4e0" stroke="#ffb020" strokeWidth="2" />
+      <circle cx={startX} cy={startY} r="4" fill="#7af2c9" />
+      <circle cx={endX} cy={endY} r="5" fill="#e6fff7" stroke="#00e5a0" strokeWidth="2" />
     </svg>
   );
 }

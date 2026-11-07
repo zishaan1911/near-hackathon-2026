@@ -199,7 +199,7 @@ run_typescript() {
   fi
 
   if ! run_ts_project \
-    "api" \
+    "server" \
     "API gateway" \
     "false"; then
     typescript_failed=1

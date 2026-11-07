@@ -171,14 +171,14 @@ export default function App() {
 
         if (candleResult.value.length === 0) {
           setHistoryNotice(
-            'No saved EGSI candles were returned yet. GASX is showing real session history as live snapshots arrive.',
+            'No saved EGSI candles were returned yet. Congest is showing real session history as live snapshots arrive.',
           );
         } else {
           setHistoryNotice('');
         }
       } else {
         setHistoryNotice(
-          `Historical candles are unavailable (${candleResult.reason instanceof Error ? candleResult.reason.message : 'request failed'}). GASX is showing real session history instead.`,
+          `Historical candles are unavailable (${candleResult.reason instanceof Error ? candleResult.reason.message : 'request failed'}). Congest is showing real session history instead.`,
         );
       }
     } finally {
@@ -279,8 +279,8 @@ export default function App() {
           </main>
 
           <footer className="app-footer">
-            <span>© 2026 GASX · AI-native Ethereum gas futures</span>
-            <span>Trading on NEAR · tUSDC collateral</span>
+            <span>© 2026 Congest · AI-native Ethereum gas futures</span>
+            <span>Trading on NEAR · tUSDC (testnet) collateral</span>
             <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
               Charts by TradingView
             </a>
