@@ -10,6 +10,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "test": "vitest run",
+    "build:vercel": "esbuild src/vercelHandler.ts --bundle --platform=node --target=node20 --format=cjs --outfile=../api/index.js --footer:js=\"module.exports = module.exports.default;\"",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "build:adapters": "npm --prefix ../blockchain/near run build",
     "predev": "npm run build:adapters",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

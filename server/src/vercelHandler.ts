@@ -5,7 +5,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import { buildApp } from '../server/src/app.js';
+import { buildApp } from './app.js';
 
 export const config = { maxDuration: 60 };
 
