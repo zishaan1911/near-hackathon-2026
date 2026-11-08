@@ -9587,14 +9587,14 @@ var require_tools = __commonJS({
       }
       return point < 32 ? JSON.stringify(str) : '"' + result + '"';
     }
-    function asJson(obj, msg, num, time) {
+    function asJson(obj, msg, num2, time) {
       if (asJsonChan.hasSubscribers === false) {
-        return _asJson.call(this, obj, msg, num, time);
+        return _asJson.call(this, obj, msg, num2, time);
       }
       const store = { instance: this, arguments };
-      return asJsonChan.traceSync(_asJson, store, this, obj, msg, num, time);
+      return asJsonChan.traceSync(_asJson, store, this, obj, msg, num2, time);
     }
-    function _asJson(obj, msg, num, time) {
+    function _asJson(obj, msg, num2, time) {
       const stringify3 = this[stringifySym];
       const stringifySafe = this[stringifySafeSym];
       const stringifiers = this[stringifiersSym];
@@ -9604,7 +9604,7 @@ var require_tools = __commonJS({
       const formatters = this[formattersSym];
       const messageKey = this[messageKeySym];
       const errorKey = this[errorKeySym];
-      let data = this[lsCacheSym][num] + time;
+      let data = this[lsCacheSym][num2] + time;
       data = data + chindings;
       let value;
       if (formatters.log) {
@@ -10229,7 +10229,7 @@ var require_proto = __commonJS({
     function defaultMixinMergeStrategy(mergeObject, mixinObject) {
       return Object.assign(mixinObject, mergeObject);
     }
-    function write(_obj, msg, num) {
+    function write(_obj, msg, num2) {
       const t = this[timeSym]();
       const mixin = this[mixinSym];
       const errorKey = this[errorKeySym];
@@ -10251,12 +10251,12 @@ var require_proto = __commonJS({
         }
       }
       if (mixin) {
-        obj = mixinMergeStrategy(obj, mixin(obj, num, this));
+        obj = mixinMergeStrategy(obj, mixin(obj, num2, this));
       }
-      const s = this[asJsonSym](obj, msg, num, t);
+      const s = this[asJsonSym](obj, msg, num2, t);
       const stream = this[streamSym];
       if (stream[needsMetadataGsym] === true) {
-        stream.lastLevel = num;
+        stream.lastLevel = num2;
         stream.lastObj = obj;
         stream.lastMsg = msg;
         stream.lastTime = t.slice(this[timeSliceIndexSym]);
@@ -11618,13 +11618,13 @@ var require_serializer = __commonJS({
         return "" + integer;
       }
       asNumber(i) {
-        const num = Number(i);
-        if (num !== num) {
+        const num2 = Number(i);
+        if (num2 !== num2) {
           throw new Error(`The value "${i}" cannot be converted to a number.`);
-        } else if (num === Infinity || num === -Infinity) {
+        } else if (num2 === Infinity || num2 === -Infinity) {
           return "null";
         } else {
-          return "" + num;
+          return "" + num2;
         }
       }
       asBoolean(bool) {
@@ -28808,9 +28808,9 @@ var require_semver = __commonJS({
         } else {
           this.prerelease = m[4].split(".").map((id2) => {
             if (/^[0-9]+$/.test(id2)) {
-              const num = +id2;
-              if (num >= 0 && num < MAX_SAFE_INTEGER) {
-                return num;
+              const num2 = +id2;
+              if (num2 >= 0 && num2 < MAX_SAFE_INTEGER) {
+                return num2;
               }
             }
             return id2;
@@ -32271,7 +32271,7 @@ var require_safe_regex2 = __commonJS({
     var { types: types2 } = require_dist3();
     function walk(node, opts, starHeight) {
       let i;
-      let ok;
+      let ok2;
       let len;
       if (node.type === types2.REPETITION) {
         starHeight++;
@@ -32282,15 +32282,15 @@ var require_safe_regex2 = __commonJS({
       const options = node.options || node.value?.options;
       if (options) {
         for (i = 0, len = options.length; i < len; i++) {
-          ok = walk({ stack: options[i] }, opts, starHeight);
-          if (!ok) return false;
+          ok2 = walk({ stack: options[i] }, opts, starHeight);
+          if (!ok2) return false;
         }
       }
       const stack = node.stack || node.value?.stack;
       if (!stack) return true;
       for (i = 0, len = stack.length; i < len; i++) {
-        ok = walk(stack[i], opts, starHeight);
-        if (!ok) return false;
+        ok2 = walk(stack[i], opts, starHeight);
+        if (!ok2) return false;
       }
       return true;
     }
@@ -38741,8 +38741,8 @@ function asafenumber(value, title = "") {
     throw new RangeError(prefix + "expected safe integer, got " + value);
   }
 }
-function numberToHexUnpadded(num) {
-  const hex = abignumber(num).toString(16);
+function numberToHexUnpadded(num2) {
+  const hex = abignumber(num2).toString(16);
   return hex.length & 1 ? "0" + hex : hex;
 }
 function hexToNumber(hex) {
@@ -39034,7 +39034,7 @@ function FpSqrt(P) {
     return sqrt9mod16(P);
   return tonelliShanks(P);
 }
-var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n2) === _1n2;
+var isNegativeLE = (num2, modulo) => (mod(num2, modulo) & _1n2) === _1n2;
 var FIELD_FIELDS = [
   "create",
   "isValid",
@@ -39073,16 +39073,16 @@ function validateField(field) {
     throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
   return field;
 }
-function FpPow(Fp2, num, power2) {
+function FpPow(Fp2, num2, power2) {
   const F2 = Fp2;
   if (power2 < _0n2)
     throw new Error("invalid exponent, negatives unsupported");
   if (power2 === _0n2)
     return F2.ONE;
   if (power2 === _1n2)
-    return num;
+    return num2;
   let p = F2.ONE;
-  let d = num;
+  let d = num2;
   while (power2 > _0n2) {
     if (power2 & _1n2)
       p = F2.mul(p, d);
@@ -39094,18 +39094,18 @@ function FpPow(Fp2, num, power2) {
 function FpInvertBatch(Fp2, nums, passZero = false) {
   const F2 = Fp2;
   const inverted = new Array(nums.length).fill(passZero ? F2.ZERO : void 0);
-  const multipliedAcc = nums.reduce((acc, num, i) => {
-    if (F2.is0(num))
+  const multipliedAcc = nums.reduce((acc, num2, i) => {
+    if (F2.is0(num2))
       return acc;
     inverted[i] = acc;
-    return F2.mul(acc, num);
+    return F2.mul(acc, num2);
   }, F2.ONE);
   const invertedAcc = F2.inv(multipliedAcc);
-  nums.reduceRight((acc, num, i) => {
-    if (F2.is0(num))
+  nums.reduceRight((acc, num2, i) => {
+    if (F2.is0(num2))
       return acc;
     inverted[i] = F2.mul(acc, inverted[i]);
-    return F2.mul(acc, num);
+    return F2.mul(acc, num2);
   }, invertedAcc);
   return inverted;
 }
@@ -39169,32 +39169,32 @@ var _Field = class {
     this.BYTES = nByteLength;
     Object.freeze(this);
   }
-  create(num) {
-    return mod(num, this.ORDER);
+  create(num2) {
+    return mod(num2, this.ORDER);
   }
-  isValid(num) {
-    if (typeof num !== "bigint")
-      throw new TypeError("invalid field element: expected bigint, got " + typeof num);
-    return _0n2 <= num && num < this.ORDER;
+  isValid(num2) {
+    if (typeof num2 !== "bigint")
+      throw new TypeError("invalid field element: expected bigint, got " + typeof num2);
+    return _0n2 <= num2 && num2 < this.ORDER;
   }
-  is0(num) {
-    return num === _0n2;
+  is0(num2) {
+    return num2 === _0n2;
   }
   // is valid and invertible
-  isValidNot0(num) {
-    return !this.is0(num) && this.isValid(num);
+  isValidNot0(num2) {
+    return !this.is0(num2) && this.isValid(num2);
   }
-  isOdd(num) {
-    return (num & _1n2) === _1n2;
+  isOdd(num2) {
+    return (num2 & _1n2) === _1n2;
   }
-  neg(num) {
-    return mod(-num, this.ORDER);
+  neg(num2) {
+    return mod(-num2, this.ORDER);
   }
   eql(lhs, rhs) {
     return lhs === rhs;
   }
-  sqr(num) {
-    return mod(num * num, this.ORDER);
+  sqr(num2) {
+    return mod(num2 * num2, this.ORDER);
   }
   add(lhs, rhs) {
     return mod(lhs + rhs, this.ORDER);
@@ -39205,15 +39205,15 @@ var _Field = class {
   mul(lhs, rhs) {
     return mod(lhs * rhs, this.ORDER);
   }
-  pow(num, power2) {
-    return FpPow(this, num, power2);
+  pow(num2, power2) {
+    return FpPow(this, num2, power2);
   }
   div(lhs, rhs) {
     return mod(lhs * invert(rhs, this.ORDER), this.ORDER);
   }
   // Same as above, but doesn't normalize
-  sqrN(num) {
-    return num * num;
+  sqrN(num2) {
+    return num2 * num2;
   }
   addN(lhs, rhs) {
     return lhs + rhs;
@@ -39224,17 +39224,17 @@ var _Field = class {
   mulN(lhs, rhs) {
     return lhs * rhs;
   }
-  inv(num) {
-    return invert(num, this.ORDER);
+  inv(num2) {
+    return invert(num2, this.ORDER);
   }
-  sqrt(num) {
+  sqrt(num2) {
     let sqrt = FIELD_SQRT.get(this);
     if (!sqrt)
       FIELD_SQRT.set(this, sqrt = FpSqrt(this.ORDER));
-    return sqrt(this, num);
+    return sqrt(this, num2);
   }
-  toBytes(num) {
-    return this.isLE ? numberToBytesLE(num, this.BYTES) : numberToBytesBE(num, this.BYTES);
+  toBytes(num2) {
+    return this.isLE ? numberToBytesLE(num2, this.BYTES) : numberToBytesBE(num2, this.BYTES);
   }
   fromBytes(bytes, skipValidation = false) {
     abytes2(bytes);
@@ -39292,8 +39292,8 @@ function mapHashToField(key, fieldOrder, isLE2 = false) {
   const minLen = Math.max(getMinHashLength(fieldOrder), 16);
   if (len < minLen || len > 1024)
     throw new Error("expected " + minLen + "-1024 bytes of input, got " + len);
-  const num = isLE2 ? bytesToNumberLE(key) : bytesToNumberBE(key);
-  const reduced = mod(num, fieldOrder - _1n2) + _1n2;
+  const num2 = isLE2 ? bytesToNumberLE(key) : bytesToNumberBE(key);
+  const reduced = mod(num2, fieldOrder - _1n2) + _1n2;
   return isLE2 ? numberToBytesLE(reduced, fieldLen) : numberToBytesBE(reduced, fieldLen);
 }
 
@@ -40665,18 +40665,18 @@ function convertRadix2(data, from, to, padding2) {
   return res;
 }
 // @__NO_SIDE_EFFECTS__
-function radix(num) {
-  anumber3(num);
+function radix(num2) {
+  anumber3(num2);
   const _256 = 2 ** 8;
   return {
     encode: (bytes) => {
       if (!isBytes3(bytes))
         throw new TypeError("radix.encode input should be Uint8Array");
-      return convertRadix(Array.from(bytes), _256, num);
+      return convertRadix(Array.from(bytes), _256, num2);
     },
     decode: (digits) => {
       anumArr("radix.decode", digits);
-      return Uint8Array.from(convertRadix(digits, num, _256));
+      return Uint8Array.from(convertRadix(digits, num2, _256));
     }
   };
 }
@@ -40797,7 +40797,7 @@ var hmac = /* @__PURE__ */ (() => {
 })();
 
 // ../blockchain/near/node_modules/@noble/curves/abstract/weierstrass.js
-var divNearest = (num, den) => (num + (num >= 0 ? den : -den) / _2n4) / den;
+var divNearest = (num2, den) => (num2 + (num2 >= 0 ? den : -den) / _2n4) / den;
 function _splitEndoScalar(k, basis, n) {
   aInRange("scalar", k, _0n6, n);
   const [[a1, b1], [a2, b2]] = basis;
@@ -40903,12 +40903,12 @@ var DER = {
   // - add zero byte if exists
   // - if next byte doesn't have a flag, leading zero is not allowed (minimal encoding)
   _int: {
-    encode(num) {
+    encode(num2) {
       const { Err: E } = DER;
-      abignumber(num);
-      if (num < _0n6)
+      abignumber(num2);
+      if (num2 < _0n6)
         throw new E("integer: negative integers are not allowed");
-      let hex = numberToHexUnpadded(num);
+      let hex = numberToHexUnpadded(num2);
       if (Number.parseInt(hex[0], 16) & 8)
         hex = "00" + hex;
       if (hex.length & 1)
@@ -41409,8 +41409,8 @@ function ecdh(Point, ecdhOpts = {}) {
   });
   function isValidSecretKey(secretKey) {
     try {
-      const num = Fn2.fromBytes(secretKey);
-      return Fn2.isValidNot0(num);
+      const num2 = Fn2.fromBytes(secretKey);
+      return Fn2.isValidNot0(num2);
     } catch (error) {
       return false;
     }
@@ -41493,10 +41493,10 @@ function ecdsa(Point, hash, ecdsaOpts = {}) {
     const HALF = CURVE_ORDER >> _1n6;
     return number > HALF;
   }
-  function validateRS(title, num) {
-    if (!Fn2.isValidNot0(num))
+  function validateRS(title, num2) {
+    if (!Fn2.isValidNot0(num2))
       throw new Error(`invalid signature ${title}: out of range 1..Point.Fn.ORDER`);
-    return num;
+    return num2;
   }
   function assertRecoverableCurve() {
     if (hasLargeRecoveryLifts)
@@ -41598,17 +41598,17 @@ function ecdsa(Point, hash, ecdsaOpts = {}) {
   const bits2int = ecdsaOpts.bits2int === void 0 ? function bits2int_def(bytes) {
     if (bytes.length > 8192)
       throw new Error("input is too large");
-    const num = bytesToNumberBE(bytes);
+    const num2 = bytesToNumberBE(bytes);
     const delta = bytes.length * 8 - fnBits;
-    return delta > 0 ? num >> BigInt(delta) : num;
+    return delta > 0 ? num2 >> BigInt(delta) : num2;
   } : ecdsaOpts.bits2int;
   const bits2int_modN = ecdsaOpts.bits2int_modN === void 0 ? function bits2int_modN_def(bytes) {
     return Fn2.create(bits2int(bytes));
   } : ecdsaOpts.bits2int_modN;
   const ORDER_MASK = bitMask(fnBits);
-  function int2octets(num) {
-    aInRange("num < 2^" + fnBits, num, _0n6, ORDER_MASK);
-    return Fn2.toBytes(num);
+  function int2octets(num2) {
+    aInRange("num < 2^" + fnBits, num2, _0n6, ORDER_MASK);
+    return Fn2.toBytes(num2);
   }
   function validateMsgAndHash(message2, prehash) {
     abytes2(message2, void 0, "message");
@@ -44335,9 +44335,9 @@ function findSeatPrice(validators, maxNumberOfSeats, minimumStakeRatio, protocol
 }
 function findSeatPriceForProtocolBefore49(validators, numSeats) {
   const stakes = validators.map((v) => BigInt(v.stake)).sort(sortBigIntAsc);
-  const num = BigInt(numSeats);
+  const num2 = BigInt(numSeats);
   const stakesSum = stakes.reduce((a, b2) => a + b2);
-  if (stakesSum < num) {
+  if (stakesSum < num2) {
     throw new Error("Stakes are below seats");
   }
   let left = 1n, right = stakesSum + 1n;
@@ -44347,7 +44347,7 @@ function findSeatPriceForProtocolBefore49(validators, numSeats) {
     let currentSum = 0n;
     for (let i = 0; i < stakes.length; ++i) {
       currentSum = currentSum + stakes[i] / mid;
-      if (currentSum >= num) {
+      if (currentSum >= num2) {
         left = mid;
         found = true;
         break;
@@ -51267,6 +51267,406 @@ function registerChatRoutes(app, deps) {
   });
 }
 
+// src/compute/base.ts
+var BASE_DATE = "2026-11-08";
+var BASE_VALUES = {
+  gpu_marketplace: 1.6554177615993964,
+  cloud_gpu_spot: 1.42784,
+  ai_inference: 0.682301,
+  btc_hashprice: 0.0361876,
+  blockspace: 134
+};
+
+// src/compute/types.ts
+var COMPONENT_META = [
+  { id: "gpu_marketplace", label: "GPU marketplace rental", unit: "$/GPU-hour", nominalWeight: 0.3, source: "Vast.ai public offers" },
+  { id: "cloud_gpu_spot", label: "Cloud GPU spot", unit: "$/GPU-hour", nominalWeight: 0.2, source: "Azure Retail Prices API (Spot)" },
+  { id: "ai_inference", label: "AI inference price", unit: "$/1M tokens (blended)", nominalWeight: 0.2, source: "OpenRouter model list" },
+  { id: "btc_hashprice", label: "Bitcoin hashprice", unit: "$/TH/day", nominalWeight: 0.2, source: "blockchain.info + CoinGecko" },
+  { id: "blockspace", label: "Ethereum blockspace stress", unit: "EGSI (0-1000)", nominalWeight: 0.1, source: "GASX AI service /egsi/current" }
+];
+function metaFor(id2) {
+  const m = COMPONENT_META.find((c) => c.id === id2);
+  if (!m) throw new Error(`unknown component ${id2}`);
+  return m;
+}
+
+// src/compute/calc.ts
+var INDEX_BASE = 1e3;
+var MIN_OK_COMPONENTS = 3;
+var RELATIVE_MIN = 0.1;
+var RELATIVE_MAX = 10;
+var round2 = (x) => Math.round(x * 100) / 100;
+function computeIndex(readings, baseValues = BASE_VALUES) {
+  const guarded2 = COMPONENT_META.map((meta) => {
+    const r = readings.find((x) => x.id === meta.id);
+    const baseValue = baseValues[meta.id];
+    let status = "down";
+    let error = r ? r.error : "missing";
+    let relative = null;
+    if (r && r.status === "ok" && r.value !== null && Number.isFinite(r.value) && r.value > 0) {
+      const rel = r.value / baseValue;
+      if (rel >= RELATIVE_MIN && rel <= RELATIVE_MAX) {
+        status = "ok";
+        error = void 0;
+        relative = rel;
+      } else {
+        error = "out of range vs base";
+      }
+    } else if (r && r.status === "ok") {
+      error = "invalid value";
+    }
+    return { meta, r, baseValue, status, error, relative };
+  });
+  const okItems = guarded2.filter((g) => g.status === "ok");
+  const nominalOk = okItems.reduce((a, g) => a + g.meta.nominalWeight, 0);
+  const enough = okItems.length >= MIN_OK_COMPONENTS;
+  const degraded = okItems.length < COMPONENT_META.length;
+  let level = null;
+  if (enough) {
+    let logSum = 0;
+    for (const g of okItems) logSum += g.meta.nominalWeight / nominalOk * Math.log(g.relative);
+    level = round2(INDEX_BASE * Math.exp(logSum));
+  }
+  const components = guarded2.map((g) => {
+    const effectiveWeight = enough && g.status === "ok" ? g.meta.nominalWeight / nominalOk : 0;
+    const out = {
+      id: g.meta.id,
+      label: g.meta.label,
+      unit: g.meta.unit,
+      source: g.r?.source ?? g.meta.source,
+      nominalWeight: g.meta.nominalWeight,
+      effectiveWeight: Math.round(effectiveWeight * 1e4) / 1e4,
+      value: g.r?.value ?? null,
+      baseValue: g.baseValue,
+      relative: g.relative === null ? null : Math.round(g.relative * 1e4) / 1e4,
+      contributionPoints: enough && g.status === "ok" ? round2((Math.pow(g.relative, effectiveWeight) - 1) * INDEX_BASE) : null,
+      status: g.status
+    };
+    if (g.error) out.error = g.error;
+    if (g.r?.detail) out.detail = g.r.detail;
+    return out;
+  });
+  return { level, degraded: degraded || level === null, components };
+}
+
+// src/compute/basket.ts
+var GPU_BASKET = [
+  { name: "H100 SXM", weight: 0.5 },
+  { name: "A100 SXM4", weight: 0.3 },
+  { name: "RTX 4090", weight: 0.2 }
+];
+var MODEL_BASKET = [
+  "openai/gpt-4o-mini",
+  "anthropic/claude-haiku-4.5",
+  "google/gemini-3.1-flash-lite",
+  "meta-llama/llama-3.3-70b-instruct",
+  "mistralai/mistral-large-2512",
+  "deepseek/deepseek-v3.2",
+  "qwen/qwen3.6-plus",
+  "x-ai/grok-4.3"
+];
+var AZURE_SKUS = ["Standard_NC24ads_A100_v4", "Standard_NC40ads_H100_v5"];
+var AZURE_REGIONS = ["eastus", "eastus2", "westus2", "southcentralus"];
+
+// src/compute/http.ts
+var TIMEOUT_MS = 8e3;
+async function fetchJson(fetchImpl, url, init) {
+  let res;
+  try {
+    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch {
+    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
+  return res.json();
+}
+function isRecord(x) {
+  return typeof x === "object" && x !== null;
+}
+function num(x) {
+  const n = typeof x === "string" ? Number(x) : x;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+function errMsg(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+
+// src/compute/stats.ts
+function median(xs) {
+  if (xs.length === 0) throw new Error("median of empty array");
+  const s = [...xs].sort((a, b2) => a - b2);
+  const mid = Math.floor(s.length / 2);
+  const lo = s[mid - 1];
+  const hi = s[mid];
+  return s.length % 2 ? hi : (lo + hi) / 2;
+}
+function trim(xs, frac) {
+  const s = [...xs].sort((a, b2) => a - b2);
+  const k = Math.floor(s.length * frac);
+  return s.slice(k, s.length - k);
+}
+function weightedGeoMean(items) {
+  const wsum = items.reduce((a, i) => a + i.weight, 0);
+  if (items.length === 0 || wsum <= 0) throw new Error("empty geometric mean");
+  return Math.exp(items.reduce((a, i) => a + i.weight / wsum * Math.log(i.value), 0));
+}
+
+// src/compute/fetchers.ts
+function ok(id2, value, detail) {
+  const m = metaFor(id2);
+  return { id: id2, label: m.label, unit: m.unit, value, status: "ok", source: m.source, ...detail ? { detail } : {} };
+}
+function down(id2, error) {
+  const m = metaFor(id2);
+  return { id: id2, label: m.label, unit: m.unit, value: null, status: "down", error, source: m.source };
+}
+async function guarded(id2, fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    return down(id2, errMsg(e));
+  }
+}
+var VAST_URL = "https://console.vast.ai/api/v0/bundles/";
+var MIN_VAST_OFFERS = 5;
+function vastPerGpuPrices(offers) {
+  if (!Array.isArray(offers)) return [];
+  const out = [];
+  for (const o of offers) {
+    if (!isRecord(o)) continue;
+    const dph = num(o.dph_total);
+    const n = num(o.num_gpus);
+    if (dph === null || n === null || n < 1 || dph <= 0) continue;
+    out.push(dph / n);
+  }
+  return out;
+}
+function vastTrimmedMedian(prices) {
+  return median(trim(prices, 0.1));
+}
+function fetchGpuMarketplace(fetchImpl) {
+  return guarded("gpu_marketplace", async () => {
+    const results = await Promise.allSettled(
+      GPU_BASKET.map(async (g) => {
+        const body = await fetchJson(fetchImpl, VAST_URL, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            limit: 100,
+            type: "on-demand",
+            verified: { eq: true },
+            rentable: { eq: true },
+            num_gpus: { gte: 1 },
+            gpu_name: { eq: g.name }
+          })
+        });
+        const prices = vastPerGpuPrices(isRecord(body) ? body.offers : void 0);
+        return { g, prices };
+      })
+    );
+    const items = [];
+    const detail = {};
+    const errors = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const g = GPU_BASKET[i];
+      if (!r || !g) continue;
+      if (r.status === "rejected") {
+        errors.push(`${g.name}: ${errMsg(r.reason)}`);
+        continue;
+      }
+      detail[`${g.name} offers`] = r.value.prices.length;
+      if (r.value.prices.length < MIN_VAST_OFFERS) continue;
+      const med = vastTrimmedMedian(r.value.prices);
+      detail[`${g.name} median`] = Number(med.toFixed(4));
+      items.push({ value: med, weight: g.weight });
+    }
+    if (items.length === 0) {
+      return down("gpu_marketplace", errors.length ? errors.join("; ") : "no GPU had enough offers");
+    }
+    return ok("gpu_marketplace", weightedGeoMean(items), detail);
+  });
+}
+var AZURE_URL = "https://prices.azure.com/api/retail/prices";
+var AZURE_MAX_PAGES = 4;
+function azureSpotPrices(items) {
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const it of items) {
+    if (!isRecord(it)) continue;
+    const sku = typeof it.skuName === "string" ? it.skuName : "";
+    const product = typeof it.productName === "string" ? it.productName : "";
+    const price = num(it.retailPrice);
+    if (!sku.includes("Spot") || product.includes("Windows") || price === null || price <= 0) continue;
+    out.push(price);
+  }
+  return out;
+}
+async function azureRegionSkuPrice(fetchImpl, region, sku) {
+  const filter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and armRegionName eq '${region}' and armSkuName eq '${sku}'`;
+  let url = `${AZURE_URL}?$filter=${encodeURIComponent(filter)}`;
+  const prices = [];
+  for (let page = 0; page < AZURE_MAX_PAGES && url; page++) {
+    const body = await fetchJson(fetchImpl, url);
+    if (!isRecord(body)) break;
+    prices.push(...azureSpotPrices(body.Items));
+    url = typeof body.NextPageLink === "string" && body.NextPageLink ? body.NextPageLink : null;
+  }
+  return prices.length ? median(prices) : null;
+}
+function fetchCloudGpuSpot(fetchImpl) {
+  return guarded("cloud_gpu_spot", async () => {
+    const skuMedians = [];
+    const detail = {};
+    const errors = [];
+    for (const sku of AZURE_SKUS) {
+      const settled = await Promise.allSettled(AZURE_REGIONS.map((r) => azureRegionSkuPrice(fetchImpl, r, sku)));
+      const prices = [];
+      for (const s of settled) {
+        if (s.status === "fulfilled" && s.value !== null) prices.push(s.value);
+        else if (s.status === "rejected") errors.push(errMsg(s.reason));
+      }
+      if (prices.length === 0) continue;
+      const med = median(prices);
+      detail[`${sku} median`] = Number(med.toFixed(4));
+      detail[`${sku} regions`] = prices.length;
+      skuMedians.push({ value: med, weight: 1 });
+    }
+    if (skuMedians.length === 0) return down("cloud_gpu_spot", errors[0] ?? "no Azure spot prices found");
+    return ok("cloud_gpu_spot", weightedGeoMean(skuMedians), detail);
+  });
+}
+var OPENROUTER_URL = "https://openrouter.ai/api/v1/models";
+var MIN_MODELS = 4;
+function blendedPerMillion(prompt, completion) {
+  return (3 * prompt + completion) / 4 * 1e6;
+}
+function openRouterBlended(data, basket) {
+  const out = {};
+  if (!Array.isArray(data)) return out;
+  for (const m of data) {
+    if (!isRecord(m) || typeof m.id !== "string" || !basket.includes(m.id) || !isRecord(m.pricing)) continue;
+    const p = num(m.pricing.prompt);
+    const c = num(m.pricing.completion);
+    if (p === null || c === null) continue;
+    const b2 = blendedPerMillion(p, c);
+    if (b2 > 0) out[m.id] = b2;
+  }
+  return out;
+}
+function fetchAiInference(fetchImpl, basket = MODEL_BASKET) {
+  return guarded("ai_inference", async () => {
+    const body = await fetchJson(fetchImpl, OPENROUTER_URL);
+    const blended = openRouterBlended(isRecord(body) ? body.data : void 0, basket);
+    const ids = Object.keys(blended);
+    if (ids.length < MIN_MODELS) return down("ai_inference", `only ${ids.length}/${basket.length} basket models present`);
+    const detail = { modelsPresent: ids.length, modelsTotal: basket.length };
+    for (const id2 of ids) detail[id2] = Number(blended[id2].toFixed(4));
+    return ok("ai_inference", weightedGeoMean(ids.map((id2) => ({ value: blended[id2], weight: 1 }))), detail);
+  });
+}
+var BLOCKCHAIN_STATS_URL = "https://api.blockchain.info/stats";
+var COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
+function hashprice(btcUsd, hashrateTH) {
+  return 3.125 * 144 * btcUsd / hashrateTH;
+}
+function fetchBtcHashprice(fetchImpl) {
+  return guarded("btc_hashprice", async () => {
+    const stats = await fetchJson(fetchImpl, BLOCKCHAIN_STATS_URL);
+    const ghs = isRecord(stats) ? num(stats.hash_rate) : null;
+    if (ghs === null || ghs <= 0) throw new Error("blockchain.info: missing hash_rate");
+    const hashrateTH = ghs / 1e3;
+    let btcUsd = null;
+    let priceSource = "coingecko";
+    try {
+      const cg = await fetchJson(fetchImpl, COINGECKO_URL);
+      const btc = isRecord(cg) ? cg.bitcoin : void 0;
+      btcUsd = isRecord(btc) ? num(btc.usd) : null;
+    } catch {
+      btcUsd = null;
+    }
+    if (btcUsd === null || btcUsd <= 0) {
+      btcUsd = isRecord(stats) ? num(stats.market_price_usd) : null;
+      priceSource = "blockchain.info";
+    }
+    if (btcUsd === null || btcUsd <= 0) throw new Error("no BTC/USD price available");
+    return ok("btc_hashprice", hashprice(btcUsd, hashrateTH), {
+      btcUsd,
+      hashrateTH: Number(hashrateTH.toFixed(0)),
+      priceSource
+    });
+  });
+}
+function fetchBlockspace(getScore) {
+  return guarded("blockspace", async () => {
+    const score = await getScore();
+    if (score === null) return down("blockspace", "EGSI unavailable");
+    return ok("blockspace", Math.max(1, score), { rawScore: score });
+  });
+}
+async function fetchAllComponents(opts) {
+  const ids = ["gpu_marketplace", "cloud_gpu_spot", "ai_inference", "btc_hashprice", "blockspace"];
+  const settled = await Promise.allSettled([
+    fetchGpuMarketplace(opts.fetchImpl),
+    fetchCloudGpuSpot(opts.fetchImpl),
+    fetchAiInference(opts.fetchImpl),
+    fetchBtcHashprice(opts.fetchImpl),
+    fetchBlockspace(opts.getEgsiScore)
+  ]);
+  return settled.map((s, i) => s.status === "fulfilled" ? s.value : down(ids[i], errMsg(s.reason)));
+}
+
+// src/compute/service.ts
+var METHODOLOGY_VERSION = "1.0";
+var CACHE_TTL_MS = 6e4;
+function createComputeService(opts) {
+  const now = opts.now ?? (() => Date.now());
+  const ttl = opts.ttlMs ?? CACHE_TTL_MS;
+  let cached = null;
+  let inflight = null;
+  async function compute() {
+    const readings = await fetchAllComponents({ fetchImpl: opts.fetchImpl, getEgsiScore: opts.getEgsiScore });
+    const calc = computeIndex(readings, opts.baseValues ?? BASE_VALUES);
+    return {
+      index: {
+        id: "CCI",
+        name: "Congest Compute Index",
+        level: calc.level,
+        base: INDEX_BASE,
+        baseDate: BASE_DATE,
+        asOf: new Date(now()).toISOString(),
+        degraded: calc.degraded,
+        methodologyVersion: METHODOLOGY_VERSION
+      },
+      components: calc.components
+    };
+  }
+  return async () => {
+    if (cached && now() - cached.at < ttl) return cached.value;
+    if (inflight) return inflight;
+    inflight = compute().then((value) => {
+      cached = { at: now(), value };
+      return value;
+    }).finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
+}
+
+// src/routes/indices.ts
+function registerIndicesRoutes(app, deps, opts = {}) {
+  const getCci = createComputeService({
+    fetchImpl: opts.fetchImpl ?? ((input, init) => fetch(input, init)),
+    // The gateway already wraps the AI service's /egsi/current in aiClient
+    // (null on failure), so reuse it instead of threading a second URL.
+    getEgsiScore: async () => (await deps.aiClient.getCurrentEgsi())?.score ?? null,
+    ...opts.now ? { now: opts.now } : {}
+  });
+  app.get("/api/v1/indices/compute", async () => getCci());
+}
+
 // src/routes/market.ts
 function registerMarketRoutes(app, deps) {
   app.get(
@@ -51502,6 +51902,7 @@ function buildServer(deps) {
   const app = (0, import_fastify.default)({ logger: deps.logger ?? true });
   app.get("/api/v1/health", async () => ({ status: "ok" }));
   registerMarketRoutes(app, deps);
+  registerIndicesRoutes(app, deps);
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
   registerChatRoutes(app, deps);
