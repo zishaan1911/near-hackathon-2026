@@ -51283,7 +51283,7 @@ var COMPONENT_META = [
   { id: "cloud_gpu_spot", label: "Cloud GPU spot", unit: "$/GPU-hour", nominalWeight: 0.2, source: "Azure Retail Prices API (Spot)" },
   { id: "ai_inference", label: "AI inference price", unit: "$/1M tokens (blended)", nominalWeight: 0.2, source: "OpenRouter model list" },
   { id: "btc_hashprice", label: "Bitcoin hashprice", unit: "$/TH/day", nominalWeight: 0.2, source: "blockchain.info + CoinGecko" },
-  { id: "blockspace", label: "Ethereum blockspace stress", unit: "EGSI (0-1000)", nominalWeight: 0.1, source: "GASX AI service /egsi/current" }
+  { id: "blockspace", label: "Ethereum blockspace stress", unit: "EGSI (0-1000)", nominalWeight: 0.1, source: "Congest EGSI (Ethereum blocks)" }
 ];
 function metaFor(id2) {
   const m = COMPONENT_META.find((c) => c.id === id2);
