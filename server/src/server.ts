@@ -14,6 +14,7 @@ import { AiServiceError } from './aiClient.js';
 import type { RiskPolicyConfig } from './riskPolicy.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { registerIndicesRoutes } from './routes/indices.js';
 import { registerMarketRoutes } from './routes/market.js';
 import { registerOrderRoutes } from './routes/orders.js';
 import { registerTickRoute, type TickRouteDeps } from './tick-route.js';
@@ -43,6 +44,7 @@ export function buildServer(deps: GatewayDeps): FastifyInstance {
   app.get('/api/v1/health', async () => ({ status: 'ok' }));
 
   registerMarketRoutes(app, deps);
+  registerIndicesRoutes(app, deps);
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
   registerChatRoutes(app, deps);
