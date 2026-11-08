@@ -9,6 +9,7 @@ export const MARKET_SECTIONS = [
   { id: 'section-overview', label: 'Overview' },
   { id: 'section-trade', label: 'Trade' },
   { id: 'section-analytics', label: 'Analytics' },
+  { id: 'section-compute', label: 'Compute Index' },
 ] as const;
 
 function shortAccountId(accountId: string) {

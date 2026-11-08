@@ -585,3 +585,50 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<string> 
   }
   return reply;
 }
+
+export type ComputeComponentId =
+  | 'gpu_marketplace'
+  | 'cloud_gpu_spot'
+  | 'ai_inference'
+  | 'btc_hashprice'
+  | 'blockspace';
+
+export interface ComputeIndexComponent {
+  id: ComputeComponentId;
+  label: string;
+  unit: string;
+  source: string;
+  nominalWeight: number;
+  effectiveWeight: number;
+  value: number | null;
+  baseValue: number;
+  relative: number | null;
+  contributionPoints: number | null;
+  status: 'ok' | 'down';
+  error?: string;
+  detail?: Record<string, number | string>;
+}
+
+export interface ComputeIndexResponse {
+  index: {
+    id: 'CCI';
+    name: string;
+    level: number | null;
+    base: number;
+    baseDate: string;
+    /** ISO timestamp. */
+    asOf: string;
+    degraded: boolean;
+    methodologyVersion: string;
+  };
+  components: ComputeIndexComponent[];
+}
+
+export async function getComputeIndex(): Promise<ComputeIndexResponse> {
+  const payload = await request('/api/v1/indices/compute');
+  const root = rec(payload);
+  if (!isRecord(root.index) || !Array.isArray(root.components)) {
+    throw new Error('The Compute Index response was not in the expected shape.');
+  }
+  return payload as ComputeIndexResponse;
+}

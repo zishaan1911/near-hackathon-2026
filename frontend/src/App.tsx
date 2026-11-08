@@ -12,6 +12,7 @@ import { LandingPage } from './components/LandingPage';
 import { MarketDashboard } from './components/MarketDashboard';
 import { TradePage, type SessionTrade } from './components/TradePage';
 import { AnalyticsPage } from './components/AnalyticsPage';
+import { ComputeIndexPage } from './components/ComputeIndexPage';
 import { ChatWidget } from './components/ChatWidget';
 
 function SessionPositions({ trades }: { trades: SessionTrade[] }) {
@@ -275,6 +276,10 @@ export default function App() {
 
             <div id="section-analytics">
               <AnalyticsPage snapshot={snapshot} candles={candles} />
+            </div>
+
+            <div id="section-compute">
+              <ComputeIndexPage />
             </div>
           </main>
 
