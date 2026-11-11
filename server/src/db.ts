@@ -21,7 +21,7 @@
  *    Postgres at all.
  */
 import postgres from 'postgres';
-import type { Sql } from 'postgres';
+import type { JSONValue, Sql } from 'postgres';
 
 export interface EgsiSnapshotRow {
   market: string;
@@ -73,7 +73,24 @@ export interface PreparedOrderRow {
   rejectReason: string | null;
 }
 
+export interface ComputeIndexSnapshotInput {
+  level: number;
+  /** Stored as jsonb; must be JSON-serialisable. */
+  components: unknown;
+  methodologyVersion: string;
+}
+
+export interface ComputeIndexPoint {
+  /** ISO timestamp. */
+  t: string;
+  level: number;
+}
+
 export interface Database {
+  /** Best-effort CCI snapshot write. Resolves true when stored. */
+  recordComputeIndexSnapshot(input: ComputeIndexSnapshotInput): Promise<boolean>;
+  /** CCI levels of the last `days` days (clamped 1..90), oldest first; [] on error. */
+  getComputeIndexHistory(days: number): Promise<ComputeIndexPoint[]>;
   recordEgsiSnapshot(row: EgsiSnapshotRow): Promise<number | null>;
   recordForecast(row: ForecastRow, snapshotId: number | null): Promise<void>;
   recordPreparedOrder(row: PreparedOrderRow): Promise<void>;
@@ -127,6 +144,12 @@ export function mapSnapshotRow(r: RawRow): EgsiSnapshotRow {
   };
 }
 
+/** numeric comes back as a string and timestamptz as a Date. */
+export function mapComputeIndexRow(r: RawRow): ComputeIndexPoint {
+  const taken = r.taken_at instanceof Date ? r.taken_at : new Date(String(r.taken_at));
+  return { t: taken.toISOString(), level: Number(r.level) };
+}
+
 export function mapCandleRow(r: RawRow): Candle {
   return {
     time: Number(r.time),
@@ -170,6 +193,34 @@ export class PostgresDatabase implements Database {
     } catch (err) {
       this.log.error(`failed to record EGSI snapshot: ${(err as Error).message}`);
       return null;
+    }
+  }
+
+  async recordComputeIndexSnapshot(input: ComputeIndexSnapshotInput): Promise<boolean> {
+    try {
+      await this.sql`
+        INSERT INTO compute_index_snapshots (level, components, methodology_version)
+        VALUES (${input.level}, ${this.sql.json(input.components as JSONValue)}, ${input.methodologyVersion})`;
+      return true;
+    } catch (err) {
+      this.log.error(`failed to record compute index snapshot: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  async getComputeIndexHistory(days: number): Promise<ComputeIndexPoint[]> {
+    try {
+      const safeDays = clampLimit(days, 90);
+      const rows = await this.sql<RawRow[]>`
+        SELECT taken_at, level
+        FROM compute_index_snapshots
+        WHERE taken_at >= now() - make_interval(days => ${safeDays}::int)
+        ORDER BY taken_at ASC
+        LIMIT 10000`;
+      return rows.map(mapComputeIndexRow);
+    } catch (err) {
+      this.log.error(`failed to read compute index history: ${(err as Error).message}`);
+      return [];
     }
   }
 
