@@ -22,6 +22,7 @@ import {
   clampLimit,
   createDatabase,
   mapCandleRow,
+  mapComputeIndexRow,
   mapSnapshotRow,
   type Database,
 } from '../src/db.js';
@@ -270,5 +271,63 @@ describe.skipIf(!url)('PostgresDatabase (real server)', () => {
     ]);
     // Oldest first.
     expect(candles[0]!.time).toBeLessThan(candles[1]!.time);
+  });
+});
+
+describe('compute index snapshots (pure)', () => {
+  it('maps numeric strings and Date/ISO timestamps', () => {
+    expect(mapComputeIndexRow({ taken_at: new Date('2026-11-10T12:00:00Z'), level: '1012.34' })).toEqual({
+      t: '2026-11-10T12:00:00.000Z',
+      level: 1012.34,
+    });
+    expect(mapComputeIndexRow({ taken_at: '2026-11-10T12:00:00Z', level: 1000 }).t).toBe('2026-11-10T12:00:00.000Z');
+  });
+});
+
+describe.skipIf(!url)('compute index snapshots (real server)', () => {
+  const db: Database = createDatabase(url, silentLog)!;
+  const raw = postgres(url!, {
+    max: 1,
+    prepare: false,
+    ssl: /localhost|127\.0\.0\.1|\[::1\]/.test(url!) ? false : 'require',
+  });
+
+  beforeAll(async () => {
+    const migration = readFileSync(
+      fileURLToPath(new URL('../../supabase/migrations/0003_compute_index.sql', import.meta.url)),
+      'utf8',
+    );
+    await raw.unsafe(migration);
+    await raw.unsafe(migration); // idempotent
+  });
+
+  beforeEach(async () => {
+    await raw.unsafe('TRUNCATE compute_index_snapshots RESTART IDENTITY');
+  });
+
+  afterAll(async () => {
+    await db.close();
+    await raw.end({ timeout: 5 });
+  });
+
+  it('stores a snapshot and reads the level back', async () => {
+    const ok = await db.recordComputeIndexSnapshot({
+      level: 1012.34,
+      components: [{ id: 'gpu_rental', relative: 1.01 }],
+      methodologyVersion: '2.0',
+    });
+    expect(ok).toBe(true);
+    const history = await db.getComputeIndexHistory(1);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.level).toBeCloseTo(1012.34, 5);
+  });
+
+  it('excludes snapshots older than the window', async () => {
+    await raw.unsafe(
+      `INSERT INTO compute_index_snapshots (taken_at, level, components, methodology_version)
+       VALUES (now() - interval '10 days', 990, '[]'::jsonb, '2.0')`,
+    );
+    expect(await db.getComputeIndexHistory(7)).toHaveLength(0);
+    expect(await db.getComputeIndexHistory(30)).toHaveLength(1);
   });
 });
