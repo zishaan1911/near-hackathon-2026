@@ -1,0 +1,182 @@
+[
+  {
+    "slug": "hero-frontier",
+    "kind": "scene",
+    "file": "/img/compute/hero-frontier.jpg",
+    "title": "Frontier supercomputer (10).jpg",
+    "author": "Oak Ridge National Laboratory",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Frontier_supercomputer_(10).jpg"
+  },
+  {
+    "slug": "frontier-aisle",
+    "kind": "scene",
+    "file": "/img/compute/frontier-aisle.jpg",
+    "title": "Frontier Supercomputer (2).jpg",
+    "author": "OLCF at ORNL",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Frontier_Supercomputer_(2).jpg"
+  },
+  {
+    "slug": "summit",
+    "kind": "scene",
+    "file": "/img/compute/summit.jpg",
+    "title": "Summit Supercomputer 2018.jpg",
+    "author": "OLCF at ORNL",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Summit_Supercomputer_2018.jpg"
+  },
+  {
+    "slug": "nersc-rack",
+    "kind": "scene",
+    "file": "/img/compute/nersc-rack.jpg",
+    "title": "Rear of rack at NERSC data center - closeup.jpg",
+    "author": "Derrick Coetzee from Berkeley, CA, USA",
+    "license": "CC0",
+    "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Rear_of_rack_at_NERSC_data_center_-_closeup.jpg"
+  },
+  {
+    "slug": "dgx",
+    "kind": "scene",
+    "file": "/img/compute/dgx.jpg",
+    "title": "Nvidia DGX front view dllu.jpg",
+    "author": "Daniel Lu ( User:dllu )",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Nvidia_DGX_front_view_dllu.jpg"
+  },
+  {
+    "slug": "wafer",
+    "kind": "scene",
+    "file": "/img/compute/wafer.jpg",
+    "title": "5C2A5953R - 49913961083 – Silicon Wafer 20200519.jpg",
+    "author": "Rob Bulmahn",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:5C2A5953R_-_49913961083_%E2%80%93_Silicon_Wafer_20200519.jpg"
+  },
+  {
+    "slug": "mining-farm",
+    "kind": "scene",
+    "file": "/img/compute/mining-farm.jpg",
+    "title": "Bitcoin mining farm.jpg",
+    "author": "Marko Ahtisaari",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Bitcoin_mining_farm.jpg"
+  },
+  {
+    "slug": "cables",
+    "kind": "scene",
+    "file": "/img/compute/cables.jpg",
+    "title": "Network cables in server room.jpg",
+    "author": "ProjectManhattan",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Network_cables_in_server_room.jpg"
+  },
+  {
+    "slug": "robot",
+    "kind": "scene",
+    "file": "/img/compute/robot.jpg",
+    "title": "Humanoid robot at Science Square Tsukuba.jpg",
+    "author": "Syced",
+    "license": "CC0",
+    "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Humanoid_robot_at_Science_Square_Tsukuba.jpg"
+  },
+  {
+    "slug": "jensen-huang",
+    "kind": "portrait",
+    "file": "/img/compute/jensen-huang.jpg",
+    "title": "Jensen huang stanford 2026-04-30 010.jpg",
+    "author": "Anderseidesvik",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Jensen_huang_stanford_2026-04-30_010.jpg"
+  },
+  {
+    "slug": "sam-altman",
+    "kind": "portrait",
+    "file": "/img/compute/sam-altman.jpg",
+    "title": "Sam Altman CropEdit James Tamim.jpg",
+    "author": "TechCrunch",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sam_Altman_CropEdit_James_Tamim.jpg"
+  },
+  {
+    "slug": "satya-nadella",
+    "kind": "portrait",
+    "file": "/img/compute/satya-nadella.jpg",
+    "title": "MS-Exec-Nadella-Satya-2017-08-31-22 (cropped).jpg",
+    "author": "Brian Smale and Microsoft",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:MS-Exec-Nadella-Satya-2017-08-31-22_(cropped).jpg"
+  },
+  {
+    "slug": "sundar-pichai",
+    "kind": "portrait",
+    "file": "/img/compute/sundar-pichai.jpg",
+    "title": "Sundar Pichai - 2023 (cropped).jpg",
+    "author": "Photographer: Lukasz Kobus (European Commission)",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sundar_Pichai_-_2023_(cropped).jpg"
+  },
+  {
+    "slug": "lisa-su",
+    "kind": "portrait",
+    "file": "/img/compute/lisa-su.jpg",
+    "title": "SXSW-2024-alih-OB7A0861-Lisa Su.jpg",
+    "author": "Fuzheado",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:SXSW-2024-alih-OB7A0861-Lisa_Su.jpg"
+  },
+  {
+    "slug": "mark-zuckerberg",
+    "kind": "portrait",
+    "file": "/img/compute/mark-zuckerberg.jpg",
+    "title": "Mark Zuckerberg F8 2019 Keynote (32830578717) (cropped).jpg",
+    "author": "Anthony Quintano from Westminster, United States",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Mark_Zuckerberg_F8_2019_Keynote_(32830578717)_(cropped).jpg"
+  },
+  {
+    "slug": "elon-musk",
+    "kind": "portrait",
+    "file": "/img/compute/elon-musk.jpg",
+    "title": "Elon Musk Colorado 2022 (cropped2).jpg",
+    "author": "U.S. Air Force / Trevor Cokley",
+    "license": "Public domain",
+    "licenseUrl": null,
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Elon_Musk_Colorado_2022_(cropped2).jpg"
+  },
+  {
+    "slug": "dario-amodei",
+    "kind": "portrait",
+    "file": "/img/compute/dario-amodei.jpg",
+    "title": "Dario Amodei in 2023.jpg",
+    "author": "UK Prime Minister",
+    "license": "CC BY 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Dario_Amodei_in_2023.jpg"
+  },
+  {
+    "slug": "demis-hassabis",
+    "kind": "portrait",
+    "file": "/img/compute/demis-hassabis.jpg",
+    "title": "Demis Hassabis, 2024 Nobel Prize Laureate in Chemistry.jpg",
+    "author": "Arthur Petron",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Demis_Hassabis,_2024_Nobel_Prize_Laureate_in_Chemistry.jpg"
+  }
+]
