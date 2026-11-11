@@ -1,41 +1,37 @@
 /**
- * Component fetchers for the Congest Compute Index. Every fetcher takes an
+ * Quote fetchers for the Congest Compute Index v2.0. Every fetcher takes an
  * injectable `fetchImpl` (tests never touch the network), never throws
- * (failures become `status: 'down'`), and uses 8s timeouts with one retry
- * on network error (see http.ts).
+ * (failures become missing quotes plus an error string), and uses timeouts
+ * with one retry on network error (see http.ts).
  */
-import { AZURE_REGIONS, AZURE_SKUS, GPU_BASKET, MODEL_BASKET } from './basket.js';
-import { errMsg, fetchJson, isRecord, num } from './http.js';
-import { median, trim, weightedGeoMean } from './stats.js';
 import {
-  metaFor,
-  type ComponentDetail,
-  type ComponentId,
-  type ComponentReading,
-  type FetchImpl,
-} from './types.js';
+  AWS_US_REGIONS,
+  AZURE_REGIONS,
+  CLOUD_CPU_SPECS,
+  CLOUD_GPU_SPECS,
+  GPU_PRODUCTS,
+  GPU_VENUES,
+  MODEL_BASKET,
+  cloudQuoteKey,
+  type CloudSpec,
+  type GpuId,
+} from './basket.js';
+import type { BlockspaceReading } from './blockspace.js';
+import { errMsg, fetchJson, fetchText, isRecord, num } from './http.js';
+import { median, trim } from './stats.js';
+import type { ComponentDetail, ComponentFetch, ComponentId, ExpectedQuote, FetchImpl, Quote } from './types.js';
 
-function ok(id: ComponentId, value: number, detail?: ComponentDetail): ComponentReading {
-  const m = metaFor(id);
-  return { id, label: m.label, unit: m.unit, value, status: 'ok', source: m.source, ...(detail ? { detail } : {}) };
+function q(component: ComponentId, key: string, product: string, venue: string, price: number): Quote {
+  return { key, component, product, venue, price };
 }
 
-function down(id: ComponentId, error: string): ComponentReading {
-  const m = metaFor(id);
-  return { id, label: m.label, unit: m.unit, value: null, status: 'down', error, source: m.source };
-}
+// -------------------------------------------------------------- GPU rental
 
-async function guarded(id: ComponentId, fn: () => Promise<ComponentReading>): Promise<ComponentReading> {
-  try {
-    return await fn();
-  } catch (e) {
-    return down(id, errMsg(e));
-  }
-}
-
-// ---------------------------------------------------------------- Vast.ai
+export const gpuKey = (product: GpuId, venue: string): string => `gpu/${product}/${venue}`;
 
 const VAST_URL = 'https://console.vast.ai/api/v0/bundles/';
+const RUNPOD_URL = 'https://api.runpod.io/graphql';
+const AKASH_URL = 'https://console-api.akash.network/v1/gpu-prices';
 export const MIN_VAST_OFFERS = 5;
 
 /** Per-GPU $/hr for each offer: dph_total / num_gpus. */
@@ -57,10 +53,52 @@ export function vastTrimmedMedian(prices: number[]): number {
   return median(trim(prices, 0.1));
 }
 
-export function fetchGpuMarketplace(fetchImpl: FetchImpl): Promise<ComponentReading> {
-  return guarded('gpu_marketplace', async () => {
+/** RunPod: price = securePrice if > 0, else communityPrice. Keyed by gpuType id. */
+export function runpodPrices(body: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  const data = isRecord(body) ? body.data : undefined;
+  const types = isRecord(data) ? data.gpuTypes : undefined;
+  if (!Array.isArray(types)) return out;
+  for (const t of types) {
+    if (!isRecord(t) || typeof t.id !== 'string') continue;
+    const secure = num(t.securePrice);
+    const community = num(t.communityPrice);
+    const price = secure !== null && secure > 0 ? secure : community;
+    if (price !== null && price > 0) out.set(t.id, price);
+  }
+  return out;
+}
+
+/** Akash: nvidia models with available > 0; median of price.weightedAverage across RAM variants. */
+export function akashPrices(body: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  const models = isRecord(body) ? body.models : undefined;
+  if (!Array.isArray(models)) return out;
+  const byModel = new Map<string, number[]>();
+  for (const m of models) {
+    if (!isRecord(m) || m.vendor !== 'nvidia' || typeof m.model !== 'string') continue;
+    const avail = isRecord(m.availability) ? num(m.availability.available) : null;
+    const price = isRecord(m.price) ? num(m.price.weightedAverage) : null;
+    if (avail === null || avail <= 0 || price === null || price <= 0) continue;
+    const list = byModel.get(m.model) ?? [];
+    list.push(price);
+    byModel.set(m.model, list);
+  }
+  for (const [model, prices] of byModel) out.set(model, median(prices));
+  return out;
+}
+
+export async function fetchGpuRental(fetchImpl: FetchImpl): Promise<ComponentFetch> {
+  const expected: ExpectedQuote[] = GPU_PRODUCTS.flatMap((g) =>
+    GPU_VENUES.map((v) => ({ key: gpuKey(g.id, v), product: g.id, venue: v })),
+  );
+  const quotes: Quote[] = [];
+  const errors: string[] = [];
+  const detail: ComponentDetail = {};
+
+  const vast = async (): Promise<void> => {
     const results = await Promise.allSettled(
-      GPU_BASKET.map(async (g) => {
+      GPU_PRODUCTS.map(async (g) => {
         const body = await fetchJson(fetchImpl, VAST_URL, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -70,38 +108,113 @@ export function fetchGpuMarketplace(fetchImpl: FetchImpl): Promise<ComponentRead
             verified: { eq: true },
             rentable: { eq: true },
             num_gpus: { gte: 1 },
-            gpu_name: { eq: g.name },
+            gpu_name: { eq: g.vastName },
           }),
         });
-        const prices = vastPerGpuPrices(isRecord(body) ? body.offers : undefined);
-        return { g, prices };
+        return vastPerGpuPrices(isRecord(body) ? body.offers : undefined);
       }),
     );
-    const items: Array<{ value: number; weight: number }> = [];
-    const detail: ComponentDetail = {};
-    const errors: string[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      const g = GPU_BASKET[i];
-      if (!r || !g) continue;
+    results.forEach((r, i) => {
+      const g = GPU_PRODUCTS[i];
+      if (!g) return;
       if (r.status === 'rejected') {
-        errors.push(`${g.name}: ${errMsg(r.reason)}`);
-        continue;
+        errors.push(`vast ${g.id}: ${errMsg(r.reason)}`);
+        return;
       }
-      detail[`${g.name} offers`] = r.value.prices.length;
-      if (r.value.prices.length < MIN_VAST_OFFERS) continue;
-      const med = vastTrimmedMedian(r.value.prices);
-      detail[`${g.name} median`] = Number(med.toFixed(4));
-      items.push({ value: med, weight: g.weight });
+      detail[`vast ${g.id} offers`] = r.value.length;
+      if (r.value.length < MIN_VAST_OFFERS) return;
+      quotes.push(q('gpu_rental', gpuKey(g.id, 'vast'), g.id, 'vast', vastTrimmedMedian(r.value)));
+    });
+  };
+
+  const runpod = async (): Promise<void> => {
+    const prices = runpodPrices(
+      await fetchJson(fetchImpl, RUNPOD_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: '{ gpuTypes { id displayName securePrice communityPrice } }' }),
+      }),
+    );
+    for (const g of GPU_PRODUCTS) {
+      const p = prices.get(g.runpodId);
+      if (p !== undefined) quotes.push(q('gpu_rental', gpuKey(g.id, 'runpod'), g.id, 'runpod', p));
     }
-    if (items.length === 0) {
-      return down('gpu_marketplace', errors.length ? errors.join('; ') : 'no GPU had enough offers');
+  };
+
+  const akash = async (): Promise<void> => {
+    const prices = akashPrices(await fetchJson(fetchImpl, AKASH_URL));
+    for (const g of GPU_PRODUCTS) {
+      const p = prices.get(g.akashModel);
+      if (p !== undefined) quotes.push(q('gpu_rental', gpuKey(g.id, 'akash'), g.id, 'akash', p));
     }
-    return ok('gpu_marketplace', weightedGeoMean(items), detail);
+  };
+
+  const settled = await Promise.allSettled([vast(), runpod(), akash()]);
+  settled.forEach((s, i) => {
+    if (s.status === 'rejected') errors.push(`${GPU_VENUES[i]}: ${errMsg(s.reason)}`);
   });
+  quotes.sort((a, b) => a.key.localeCompare(b.key));
+  return { id: 'gpu_rental', quotes, expected, errors, detail };
 }
 
-// ------------------------------------------------------------------ Azure
+// -------------------------------------------------------------- AWS spot
+
+const AWS_SPOT_URL = 'https://website.spot.ec2.aws.a2z.com/spot.js';
+const AWS_TIMEOUT_MS = 30_000; // the JSONP file is ~7 MB
+
+/**
+ * Parses the spot.js JSONP payload. Returns, per wanted instance size, the
+ * median Linux spot price ($/instance-hour) across US regions. "N/A*" and
+ * other non-numeric prices are skipped.
+ */
+export function parseAwsSpot(text: string, wanted: readonly string[]): Map<string, number> {
+  const start = text.indexOf('(');
+  const end = text.lastIndexOf(')');
+  if (start < 0 || end <= start) throw new Error('AWS spot.js: not JSONP');
+  const parsed: unknown = JSON.parse(text.slice(start + 1, end));
+  const config = isRecord(parsed) ? parsed.config : undefined;
+  const regions = isRecord(config) ? config.regions : undefined;
+  if (!Array.isArray(regions)) throw new Error('AWS spot.js: no regions');
+  const perSize = new Map<string, number[]>();
+  for (const r of regions) {
+    if (!isRecord(r) || typeof r.region !== 'string' || !AWS_US_REGIONS.includes(r.region)) continue;
+    if (!Array.isArray(r.instanceTypes)) continue;
+    for (const t of r.instanceTypes) {
+      if (!isRecord(t) || !Array.isArray(t.sizes)) continue;
+      for (const s of t.sizes) {
+        if (!isRecord(s) || typeof s.size !== 'string' || !wanted.includes(s.size)) continue;
+        const cols = Array.isArray(s.valueColumns) ? s.valueColumns : [];
+        const linux = cols.find((c) => isRecord(c) && c.name === 'linux');
+        const usd = isRecord(linux) && isRecord(linux.prices) ? num(linux.prices.USD) : null;
+        if (usd === null || usd <= 0) continue;
+        const list = perSize.get(s.size) ?? [];
+        list.push(usd);
+        perSize.set(s.size, list);
+      }
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [size, prices] of perSize) out.set(size, median(prices));
+  return out;
+}
+
+export type AwsSpotLoader = (wanted: readonly string[]) => Promise<Map<string, number>>;
+
+/** Downloads spot.js once and shares it between the GPU and CPU components. */
+export function createAwsSpotLoader(fetchImpl: FetchImpl): AwsSpotLoader {
+  let text: Promise<string> | null = null;
+  return async (wanted) => {
+    text ??= fetchText(fetchImpl, AWS_SPOT_URL, undefined, AWS_TIMEOUT_MS);
+    try {
+      return parseAwsSpot(await text, wanted);
+    } catch (e) {
+      text = null; // do not cache a failure
+      throw e;
+    }
+  };
+}
+
+// ------------------------------------------------------------ Azure spot
 
 const AZURE_URL = 'https://prices.azure.com/api/retail/prices';
 const AZURE_MAX_PAGES = 4;
@@ -136,27 +249,62 @@ async function azureRegionSkuPrice(fetchImpl: FetchImpl, region: string, sku: st
   return prices.length ? median(prices) : null;
 }
 
-export function fetchCloudGpuSpot(fetchImpl: FetchImpl): Promise<ComponentReading> {
-  return guarded('cloud_gpu_spot', async () => {
-    const skuMedians: Array<{ value: number; weight: number }> = [];
-    const detail: ComponentDetail = {};
-    const errors: string[] = [];
-    for (const sku of AZURE_SKUS) {
-      const settled = await Promise.allSettled(AZURE_REGIONS.map((r) => azureRegionSkuPrice(fetchImpl, r, sku)));
-      const prices: number[] = [];
-      for (const s of settled) {
-        if (s.status === 'fulfilled' && s.value !== null) prices.push(s.value);
-        else if (s.status === 'rejected') errors.push(errMsg(s.reason));
-      }
-      if (prices.length === 0) continue;
-      const med = median(prices);
-      detail[`${sku} median`] = Number(med.toFixed(4));
-      detail[`${sku} regions`] = prices.length;
-      skuMedians.push({ value: med, weight: 1 });
+/** Median across regions of the Azure spot instance price, or null. Errors only if every region errored. */
+async function azureSkuPrice(fetchImpl: FetchImpl, sku: string): Promise<number | null> {
+  const settled = await Promise.allSettled(AZURE_REGIONS.map((r) => azureRegionSkuPrice(fetchImpl, r, sku)));
+  const prices: number[] = [];
+  let firstError: unknown = null;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value !== null) prices.push(s.value);
+    else if (s.status === 'rejected') firstError ??= s.reason;
+  }
+  if (prices.length) return median(prices);
+  if (firstError !== null) throw firstError instanceof Error ? firstError : new Error(String(firstError));
+  return null;
+}
+
+async function fetchCloud(
+  id: 'cloud_gpu_spot' | 'cloud_cpu_spot',
+  specs: readonly CloudSpec[],
+  fetchImpl: FetchImpl,
+  aws: AwsSpotLoader,
+): Promise<ComponentFetch> {
+  const kind = id === 'cloud_gpu_spot' ? 'cloud_gpu' : 'cloud_cpu';
+  const expected: ExpectedQuote[] = specs.map((s) => ({ key: cloudQuoteKey(kind, s), product: s.product, venue: s.venue }));
+  const quotes: Quote[] = [];
+  const errors: string[] = [];
+  const detail: ComponentDetail = {};
+
+  const awsSpecs = specs.filter((s) => s.venue === 'aws');
+  const awsTask = async (): Promise<void> => {
+    if (awsSpecs.length === 0) return;
+    const prices = await aws(awsSpecs.map((s) => s.sku));
+    for (const s of awsSpecs) {
+      const p = prices.get(s.sku);
+      if (p !== undefined) quotes.push(q(id, cloudQuoteKey(kind, s), s.product, 'aws', p / s.units));
     }
-    if (skuMedians.length === 0) return down('cloud_gpu_spot', errors[0] ?? 'no Azure spot prices found');
-    return ok('cloud_gpu_spot', weightedGeoMean(skuMedians), detail);
+  };
+  const azureTask = async (spec: CloudSpec): Promise<void> => {
+    const p = await azureSkuPrice(fetchImpl, spec.sku);
+    if (p !== null) quotes.push(q(id, cloudQuoteKey(kind, spec), spec.product, 'azure', p / spec.units));
+  };
+
+  const tasks: Array<[string, Promise<void>]> = [['aws', awsTask()]];
+  for (const s of specs.filter((x) => x.venue === 'azure')) tasks.push([`azure ${s.sku}`, azureTask(s)]);
+  const settled = await Promise.allSettled(tasks.map(([, p]) => p));
+  settled.forEach((s, i) => {
+    if (s.status === 'rejected') errors.push(`${tasks[i]?.[0]}: ${errMsg(s.reason)}`);
   });
+  quotes.sort((a, b) => a.key.localeCompare(b.key));
+  return { id, quotes, expected, errors, detail };
+}
+
+export function fetchCloudGpuSpot(fetchImpl: FetchImpl, aws: AwsSpotLoader = createAwsSpotLoader(fetchImpl)): Promise<ComponentFetch> {
+  return fetchCloud('cloud_gpu_spot', CLOUD_GPU_SPECS, fetchImpl, aws);
+}
+
+export function fetchCloudCpuSpot(fetchImpl: FetchImpl, aws: AwsSpotLoader = createAwsSpotLoader(fetchImpl)): Promise<ComponentFetch> {
+  return fetchCloud('cloud_cpu_spot', CLOUD_CPU_SPECS, fetchImpl, aws);
 }
 
 // ------------------------------------------------------------- OpenRouter
@@ -183,22 +331,34 @@ export function openRouterBlended(data: unknown, basket: readonly string[]): Rec
   return out;
 }
 
-export function fetchAiInference(fetchImpl: FetchImpl, basket: readonly string[] = MODEL_BASKET): Promise<ComponentReading> {
-  return guarded('ai_inference', async () => {
+export const aiKey = (modelId: string): string => `ai/${modelId}`;
+
+export async function fetchAiInference(fetchImpl: FetchImpl, basket: readonly string[] = MODEL_BASKET): Promise<ComponentFetch> {
+  const expected = basket.map((id) => ({ key: aiKey(id), product: id, venue: 'openrouter' }));
+  try {
     const body = await fetchJson(fetchImpl, OPENROUTER_URL);
     const blended = openRouterBlended(isRecord(body) ? body.data : undefined, basket);
     const ids = Object.keys(blended);
-    if (ids.length < MIN_MODELS) return down('ai_inference', `only ${ids.length}/${basket.length} basket models present`);
-    const detail: ComponentDetail = { modelsPresent: ids.length, modelsTotal: basket.length };
-    for (const id of ids) detail[id] = Number((blended[id] as number).toFixed(4));
-    return ok('ai_inference', weightedGeoMean(ids.map((id) => ({ value: blended[id] as number, weight: 1 }))), detail);
-  });
+    if (ids.length < MIN_MODELS) {
+      return { id: 'ai_inference', quotes: [], expected, errors: [`only ${ids.length}/${basket.length} basket models present`] };
+    }
+    return {
+      id: 'ai_inference',
+      quotes: ids.map((id) => q('ai_inference', aiKey(id), id, 'openrouter', blended[id] as number)),
+      expected,
+      errors: [],
+      detail: { modelsPresent: ids.length, modelsTotal: basket.length },
+    };
+  } catch (e) {
+    return { id: 'ai_inference', quotes: [], expected, errors: [errMsg(e)] };
+  }
 }
 
 // ------------------------------------------------------------- Hashprice
 
 const BLOCKCHAIN_STATS_URL = 'https://api.blockchain.info/stats';
 const COINGECKO_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd';
+export const BTC_KEY = 'btc/hashprice';
 
 /**
  * Hashprice in $/TH/day = subsidy * blocks/day * btcUsd / network TH/s.
@@ -209,8 +369,9 @@ export function hashprice(btcUsd: number, hashrateTH: number): number {
   return (3.125 * 144 * btcUsd) / hashrateTH;
 }
 
-export function fetchBtcHashprice(fetchImpl: FetchImpl): Promise<ComponentReading> {
-  return guarded('btc_hashprice', async () => {
+export async function fetchBtcHashprice(fetchImpl: FetchImpl): Promise<ComponentFetch> {
+  const expected = [{ key: BTC_KEY, product: 'hashprice', venue: 'blockchain' }];
+  try {
     const stats = await fetchJson(fetchImpl, BLOCKCHAIN_STATS_URL);
     const ghs = isRecord(stats) ? num(stats.hash_rate) : null;
     if (ghs === null || ghs <= 0) throw new Error('blockchain.info: missing hash_rate');
@@ -230,49 +391,58 @@ export function fetchBtcHashprice(fetchImpl: FetchImpl): Promise<ComponentReadin
       priceSource = 'blockchain.info';
     }
     if (btcUsd === null || btcUsd <= 0) throw new Error('no BTC/USD price available');
-    return ok('btc_hashprice', hashprice(btcUsd, hashrateTH), {
-      btcUsd,
-      hashrateTH: Number(hashrateTH.toFixed(0)),
-      priceSource,
-    });
-  });
+    return {
+      id: 'btc_hashprice',
+      quotes: [q('btc_hashprice', BTC_KEY, 'hashprice', 'blockchain', hashprice(btcUsd, hashrateTH))],
+      expected,
+      errors: [],
+      detail: { btcUsd, hashrateTH: Number(hashrateTH.toFixed(0)), priceSource },
+    };
+  } catch (e) {
+    return { id: 'btc_hashprice', quotes: [], expected, errors: [errMsg(e)] };
+  }
 }
 
 // ------------------------------------------------------------- Blockspace
 
-export type EgsiScoreSource = () => Promise<number | null>;
+export const BLOCKSPACE_KEY = 'eth/blockspace';
 
-/** EGSI score source reading {aiBaseUrl}/egsi/current. */
-export function egsiScoreFromUrl(aiBaseUrl: string, fetchImpl: FetchImpl): EgsiScoreSource {
-  return async () => {
-    const body = await fetchJson(fetchImpl, `${aiBaseUrl.replace(/\/$/, '')}/egsi/current`);
-    return isRecord(body) ? num(body.score) : null;
-  };
-}
-
-export function fetchBlockspace(getScore: EgsiScoreSource): Promise<ComponentReading> {
-  return guarded('blockspace', async () => {
-    const score = await getScore();
-    if (score === null) return down('blockspace', 'EGSI unavailable');
-    return ok('blockspace', Math.max(1, score), { rawScore: score });
-  });
+export async function fetchBlockspace(source: () => Promise<BlockspaceReading>): Promise<ComponentFetch> {
+  const expected = [{ key: BLOCKSPACE_KEY, product: 'basefee', venue: 'ethrpc' }];
+  try {
+    const r = await source();
+    return {
+      id: 'blockspace',
+      quotes: [q('blockspace', BLOCKSPACE_KEY, 'basefee', 'ethrpc', r.value)],
+      expected,
+      errors: [],
+      detail: {
+        medianGwei: Number(r.medianGwei.toFixed(4)),
+        ethUsd: Number(r.ethUsd.toFixed(2)),
+        ethUsdSource: r.ethUsdSource,
+        samples: r.samples,
+      },
+    };
+  } catch (e) {
+    return { id: 'blockspace', quotes: [], expected, errors: [errMsg(e)] };
+  }
 }
 
 // -------------------------------------------------------------------- All
 
 export interface FetchAllOptions {
   fetchImpl: FetchImpl;
-  getEgsiScore: EgsiScoreSource;
+  blockspace: () => Promise<BlockspaceReading>;
 }
 
-export async function fetchAllComponents(opts: FetchAllOptions): Promise<ComponentReading[]> {
-  const ids: ComponentId[] = ['gpu_marketplace', 'cloud_gpu_spot', 'ai_inference', 'btc_hashprice', 'blockspace'];
-  const settled = await Promise.allSettled([
-    fetchGpuMarketplace(opts.fetchImpl),
-    fetchCloudGpuSpot(opts.fetchImpl),
+export async function fetchAllComponents(opts: FetchAllOptions): Promise<ComponentFetch[]> {
+  const aws = createAwsSpotLoader(opts.fetchImpl);
+  return Promise.all([
+    fetchGpuRental(opts.fetchImpl),
+    fetchCloudGpuSpot(opts.fetchImpl, aws),
+    fetchCloudCpuSpot(opts.fetchImpl, aws),
     fetchAiInference(opts.fetchImpl),
     fetchBtcHashprice(opts.fetchImpl),
-    fetchBlockspace(opts.getEgsiScore),
+    fetchBlockspace(opts.blockspace),
   ]);
-  return settled.map((s, i) => (s.status === 'fulfilled' ? s.value : down(ids[i] as ComponentId, errMsg(s.reason))));
 }
