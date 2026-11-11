@@ -9,7 +9,6 @@ export const MARKET_SECTIONS = [
   { id: 'section-overview', label: 'Overview' },
   { id: 'section-trade', label: 'Trade' },
   { id: 'section-analytics', label: 'Analytics' },
-  { id: 'section-compute', label: 'Compute Index' },
 ] as const;
 
 function shortAccountId(accountId: string) {
@@ -69,6 +68,9 @@ export function AppHeader({
             {section.label}
           </button>
         ))}
+
+        {/* Its own page, not a section of this one. */}
+        <button onClick={() => window.location.assign('/compute')}>Compute Index</button>
       </nav>
 
       <div className="header-actions">

@@ -587,8 +587,9 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<string> 
 }
 
 export type ComputeComponentId =
-  | 'gpu_marketplace'
+  | 'gpu_rental'
   | 'cloud_gpu_spot'
+  | 'cloud_cpu_spot'
   | 'ai_inference'
   | 'btc_hashprice'
   | 'blockspace';
@@ -607,6 +608,28 @@ export interface ComputeIndexComponent {
   status: 'ok' | 'down';
   error?: string;
   detail?: Record<string, number | string>;
+  /** 1000 * relative. Optional so a partial API response still renders. */
+  level?: number | null;
+  sources?: string[];
+  quotes?: { ok: number; total: number };
+}
+
+export type ComputeGpuId = 'h100' | 'a100' | 'rtx4090';
+
+export interface ComputeGpuVenue {
+  venue: string;
+  price: number | null;
+  status: 'ok' | 'down';
+}
+
+export interface ComputeGpu {
+  id: ComputeGpuId;
+  label: string;
+  level: number | null;
+  medianPrice: number | null;
+  venues: ComputeGpuVenue[];
+  cheapest: { venue: string; price: number } | null;
+  spreadPct: number | null;
 }
 
 export interface ComputeIndexResponse {
@@ -622,6 +645,7 @@ export interface ComputeIndexResponse {
     methodologyVersion: string;
   };
   components: ComputeIndexComponent[];
+  gpus?: ComputeGpu[];
 }
 
 export async function getComputeIndex(): Promise<ComputeIndexResponse> {
@@ -631,4 +655,45 @@ export async function getComputeIndex(): Promise<ComputeIndexResponse> {
     throw new Error('The Compute Index response was not in the expected shape.');
   }
   return payload as ComputeIndexResponse;
+}
+
+export interface ComputeHistoryPoint {
+  t: string;
+  value: number;
+}
+
+export interface ComputeHistoryResponse {
+  /** False when the gateway has no database, so no index levels are stored. */
+  persisted: boolean;
+  points: Array<{ t: string; level: number }>;
+  backfill: {
+    btc_hashprice: ComputeHistoryPoint[];
+    blockspace: ComputeHistoryPoint[];
+  };
+}
+
+function historySeries(value: unknown, key: string): Array<{ t: string; v: number }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ t: string; v: number }> = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.t !== 'string') continue;
+    const v = item[key];
+    if (typeof v === 'number' && Number.isFinite(v)) out.push({ t: item.t, v });
+  }
+  return out;
+}
+
+export async function getComputeHistory(days = 30): Promise<ComputeHistoryResponse> {
+  const root = rec(await request(`/api/v1/indices/compute/history?days=${days}`));
+  const backfill = rec(root.backfill);
+  const toPoints = (value: unknown) =>
+    historySeries(value, 'value').map(({ t, v }) => ({ t, value: v }));
+  return {
+    persisted: root.persisted === true,
+    points: historySeries(root.points, 'level').map(({ t, v }) => ({ t, level: v })),
+    backfill: {
+      btc_hashprice: toPoints(backfill.btc_hashprice),
+      blockspace: toPoints(backfill.blockspace),
+    },
+  };
 }
