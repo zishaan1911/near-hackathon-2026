@@ -12,7 +12,7 @@ import {
   gpuVenueColumns,
   isCheapestVenue,
   nearestIndex,
-  splitLevel,
+  formatPoints,
   venueName,
   weightSegments,
 } from '../src/compute/helpers';
@@ -33,7 +33,7 @@ describe('formatPrice', () => {
     expect(formatPrice('$/GPU-hour', null)).toBe('n/a');
     expect(formatPrice('$/GPU-hour', undefined)).toBe('n/a');
     expect(formatPrice('$/GPU-hour', Number.NaN)).toBe('n/a');
-    expect(formatPrice('EGSI', 412.6)).toBe('412.60');
+    expect(formatPrice('points', 412.6)).toBe('412.60');
   });
 });
 
@@ -43,7 +43,7 @@ describe('formatUnit', () => {
     expect(formatUnit('$/TH/day')).toBe('per TH per day');
     expect(formatUnit('$/1M tokens (blended)')).toBe('per 1M tokens, blended');
     expect(formatUnit('$/1M gas (7-day median)')).toBe('per 1M gas, 7-day median');
-    expect(formatUnit('EGSI')).toBe('EGSI');
+    expect(formatUnit('points')).toBe('points');
   });
 });
 
@@ -64,9 +64,10 @@ describe('level and change', () => {
     expect(formatLevel(1000, 0)).toBe('1,000');
     expect(formatLevel(null)).toBe('n/a');
   });
-  it('splits a level without rounding drift', () => {
-    expect(splitLevel(1023.456)).toEqual({ whole: '1023', fraction: '46' });
-    expect(splitLevel(999.999)).toEqual({ whole: '1000', fraction: '00' });
+  it('formats market prices as whole points when they are whole', () => {
+    expect(formatPoints(1012)).toBe('1,012');
+    expect(formatPoints(1012.5)).toBe('1,012.50');
+    expect(formatPoints(null)).toBe('n/a');
   });
   it('signs the change against base', () => {
     expect(formatChange(1100, 1000)).toEqual({ text: '+10.00%', direction: 'up' });
