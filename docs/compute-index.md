@@ -66,8 +66,17 @@ The index no longer depends on the AI service.
 
 - `compute_index_snapshots` (migration `0003_compute_index.sql`) stores a row per snapshot: level, components (jsonb), methodology version.
 - `GET|POST /api/v1/cron/compute-snapshot` computes and records a snapshot. It needs `Authorization: Bearer <CRON_SECRET>` (503 if unset, 401 if wrong). `0004_compute_cron.sql` schedules it every 15 minutes with `pg_cron` (placeholder setting `app.settings.compute_snapshot_url`).
-- `GET /api/v1/indices/compute/history?days=30` (1..90) returns `persisted`, `points` (levels from the database, `[]` when no database is configured) and `backfill`.
-- **Backfill is real history only**, for two components: hashprice from blockchain.info `hash-rate` and `market-price` charts joined by date, and blockspace from base fees sampled every 6 hours. The blockspace backfill prices every sample at the **current** ETH/USD, which is an approximation. There is no public history for GPU, cloud or AI prices, so none is fabricated: their history exists only from the first persisted snapshot.
+- `GET /api/v1/indices/compute/history?days=30` (1..90) returns `persisted`, `points` (levels from the database, `[]` when no database is configured), `backfill`, `backcast` and `settlements`.
+
+There are three history series. No database is needed for the first two, and none of them is invented.
+
+1. **Back-cast (daily, up to 90 days before the base date).** Only two pillars have real public history: Bitcoin hashprice (blockchain.info `hash-rate` and `market-price` charts) and Ethereum blockspace (base fee sampled every 6 hours, 7-day rolling median in gwei, times that day's real ETH/USD from CoinGecko `market_chart`; if CoinGecko fails, today's ETH price is used and the response says `ethPrice: "current"` instead of `"daily"`). The level is `1000 * (hash_d / hash_base)^0.10 * (gas_d / gas_base)^0.05`, where each base is the same-method value on the base date, so the back-cast is exactly 1000 on the base date and joins the live index. The other four pillars (GPU rental, cloud GPU, cloud CPU, AI inference) have no public history and are held at their base value. **So the back-cast shows only how the two pillars with public history would have moved the index; it is not the full index.** A day missing either input is skipped, never interpolated. The response field is `backcast: { points: [{ t, level }], method, pillars: ["btc_hashprice", "blockspace"], ethPrice }`, cached for one hour.
+2. **On-chain settlements (hourly, real).** Every settled hourly market (underlying ending in `CI-1H`: `CCI-1H`, `SCI-1H`) stores its settlement price on chain. The API reads `get_market({ market_id })` for every id from 1 to the current one and returns `settlements: [{ t, level, marketId }]`, with `t` the expiry time. Settled markets never change, so they are cached in memory for good; ids not yet settled are re-read at most once a minute. The cache is per server instance and is rebuilt after a restart.
+3. **Persisted snapshots.** When a database exists, the cron snapshots above are returned as `points`. There is no public history for GPU, cloud or AI prices, so their own history exists only from the first persisted snapshot.
+
+`backfill` is the per-pillar raw series: hashprice by day and blockspace ($/1M gas) every 6 hours, now priced at each date's real ETH/USD (the earlier constant-ETH approximation is gone).
+
+`GET /api/v1/candles?interval&limit` uses the database when there is one. Without a database it no longer returns 503: it builds candles from the combined real series, with one daily candle per back-cast point (open = previous close) followed by on-chain settlements bucketed by `interval`, and adds `source: "backcast+settlements"`.
 
 ## Base values
 
@@ -81,7 +90,7 @@ v1.0 used an earlier EGSI score (0-1000) as the blockspace component. It was too
 
 - Sources are public but **unofficial**: the Vast.ai and RunPod endpoints back their own websites, AWS `spot.js` backs the spot pricing page, and any source can change shape, rate-limit or restrict access.
 - GPU and cloud components are **spot or marketplace prices, not contract prices** that large buyers pay.
-- **No history for GPU, cloud or AI components** until snapshots accumulate in the database.
+- **No history for GPU, cloud or AI components** until snapshots accumulate in the database. The back-cast holds them at base, so it understates real moves in the other 85% of the index weight.
 - **Single publisher:** one server computes and records the index; there is no on-chain multi-publisher aggregation yet.
 - Quotes missing at the base date have no base price (see above).
 - Baskets, weights and base quotes are fixed for v2.0. Changing them is a new methodology version, with the old and new series overlapped, not a silent edit.
