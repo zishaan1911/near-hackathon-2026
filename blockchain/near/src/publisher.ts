@@ -26,7 +26,7 @@ interface MarketViewLike {
 }
 
 function log(message: string, fields: Record<string, unknown> = {}): void {
-  console.log(`[gasx/publisher] ${message} ${JSON.stringify(fields)}`);
+  console.log(`[silica/publisher] ${message} ${JSON.stringify(fields)}`);
 }
 
 /**

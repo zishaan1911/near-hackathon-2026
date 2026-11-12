@@ -43,7 +43,7 @@ import type {
 export class DevMarketUnavailableError extends Error {
   constructor() {
     super(
-      'The gasx contract is not deployed — running in dev-market mode. ' +
+      'The Silica contract is not deployed — running in dev-market mode. ' +
         'Orders need GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN set ' +
         '(see blockchain/near/.env.example).',
     );
@@ -65,7 +65,7 @@ export class NearChainAdapter implements ChainAdapter {
     this.config = config;
     if (config.devMarket) {
       console.warn(
-        '[gasx/near-adapter] dev-market mode: serving a synthetic market; ' +
+        '[silica/near-adapter] dev-market mode: serving a synthetic market; ' +
           'no transactions can be prepared. Set GASX_NEAR_DEV_MARKET=false once deployed.',
       );
     }
