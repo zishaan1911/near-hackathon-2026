@@ -91,7 +91,7 @@ export interface PersonSpec {
 
 export const PEOPLE: readonly PersonSpec[] = [
   { slug: 'jensen-huang', name: 'Jensen Huang', company: 'NVIDIA', line: 'Makes the GPUs on the board above.', width: 500, height: 667, objectPosition: '50% 25%' },
-  { slug: 'lisa-su', name: 'Lisa Su', company: 'AMD', line: 'AMD chips power Frontier, the machine in our hero image.', width: 500, height: 750, objectPosition: '43% 0%', zoom: { scale: 1.55, origin: '43% 30%' } },
+  { slug: 'lisa-su', name: 'Lisa Su', company: 'AMD', line: 'AMD chips power Frontier, the supercomputer on our home page.', width: 500, height: 750, objectPosition: '43% 0%', zoom: { scale: 1.55, origin: '43% 30%' } },
   { slug: 'satya-nadella', name: 'Satya Nadella', company: 'Microsoft', line: 'Azure spot prices feed this index.', width: 500, height: 639, objectPosition: '50% 30%' },
   { slug: 'sam-altman', name: 'Sam Altman', company: 'OpenAI', line: 'OpenAI models are in the inference basket.', width: 500, height: 500, objectPosition: '52% 50%' },
   { slug: 'dario-amodei', name: 'Dario Amodei', company: 'Anthropic', line: 'Anthropic models are in the inference basket.', width: 500, height: 800, objectPosition: '41% 0%', zoom: { scale: 1.35, origin: '41% 25%' } },
