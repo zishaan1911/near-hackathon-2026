@@ -31,25 +31,9 @@ export const HERO_IMAGE = image(
   'Black Frontier supercomputer cabinets in a long row under yellow cable trays',
 );
 
-export const BREAK_DGX = image(
-  'dgx',
-  960,
-  540,
-  'An NVIDIA DGX system with a metal foam front panel, on a wooden table',
-);
-
-export const BREAK_AISLE = image(
-  'frontier-aisle',
-  960,
-  787,
-  'An aisle of Frontier supercomputer cabinets with bundles of blue coolant lines',
-);
-
 export interface PillarSpec {
   id: ComputeComponentId;
   label: string;
-  /** Grid column span on wide screens. */
-  span: 5 | 7;
   objectPosition: string;
   image: ImageSpec;
 }
@@ -58,42 +42,36 @@ export const PILLARS: readonly PillarSpec[] = [
   {
     id: 'gpu_rental',
     label: 'GPU rental',
-    span: 7,
     objectPosition: '50% 50%',
     image: image('wafer', 960, 640, 'Close-up of a silicon wafer, its dies refracting light'),
   },
   {
     id: 'cloud_gpu_spot',
     label: 'Cloud GPU spot',
-    span: 5,
     objectPosition: '62% 50%',
     image: image('summit', 960, 540, 'Rows of Summit supercomputer cabinets in a data hall'),
   },
   {
     id: 'cloud_cpu_spot',
     label: 'Cloud CPU spot',
-    span: 5,
     objectPosition: '50% 38%',
     image: image('nersc-rack', 960, 1445, 'The rear of a server rack, with cabled rows of servers'),
   },
   {
     id: 'ai_inference',
     label: 'AI inference',
-    span: 7,
     objectPosition: '55% 14%',
     image: image('robot', 960, 1275, 'A blue and silver humanoid robot on display in a museum'),
   },
   {
     id: 'btc_hashprice',
     label: 'Bitcoin hashprice',
-    span: 7,
     objectPosition: '72% 45%',
     image: image('mining-farm', 960, 540, 'A dark warehouse wall of Bitcoin miners with lit LEDs'),
   },
   {
     id: 'blockspace',
     label: 'Ethereum blockspace',
-    span: 5,
     objectPosition: '58% 32%',
     image: image('cables', 960, 1707, 'Coils of colored network cable hanging in a server rack'),
   },
@@ -124,13 +102,11 @@ export const PEOPLE: readonly PersonSpec[] = [
 ];
 
 export const PEOPLE_DISCLAIMER =
-  'Shown for editorial context only. These people and their companies are not affiliated with Congest and do not endorse it.';
+  'Shown for editorial context only. These people and their companies are not affiliated with Silica and do not endorse it.';
 
-/** Every image slug the page renders; the credits list is derived from this. */
+/** Every image slug the site renders; the credits list is derived from this. */
 export const USED_IMAGE_SLUGS: readonly string[] = [
   HERO_IMAGE.slug,
-  BREAK_DGX.slug,
-  BREAK_AISLE.slug,
   ...PILLARS.map((p) => p.image.slug),
   ...PEOPLE.map((p) => p.slug),
 ];
@@ -147,3 +123,7 @@ export const SOURCES: ReadonlyArray<{ id: ComputeComponentId; label: string; tex
   { id: 'btc_hashprice', label: 'Bitcoin hashprice', text: 'Network hash rate from blockchain.info, with BTC/USD from CoinGecko.' },
   { id: 'blockspace', label: 'Ethereum blockspace', text: 'Base fees from Ethereum JSON-RPC with ETH/USD, as a seven-day median.' },
 ];
+
+export function creditFor(slug: string): ImageCredit | undefined {
+  return IMAGE_CREDITS.find((c) => c.slug === slug);
+}

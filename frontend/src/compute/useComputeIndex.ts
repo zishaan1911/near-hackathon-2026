@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getComputeIndex, type ComputeIndexResponse } from '../lib/api';
+import { errorLine } from '../lib/trade';
 
-const POLL_MS = 60_000;
+const POLL_MS = 30_000;
 
 export interface ComputeIndexState {
   data: ComputeIndexResponse | null;
@@ -27,7 +28,7 @@ export function useComputeIndex(): ComputeIndexState {
       setError('');
     } catch (e) {
       if (id !== latest.current) return;
-      setError(e instanceof Error ? e.message : 'Could not load the Compute Index.');
+      setError(errorLine(e, 'The index did not load.'));
     } finally {
       if (id === latest.current) setLoading(false);
     }

@@ -1,4 +1,4 @@
-/** Pure formatting and geometry helpers for the /compute page. No React here. */
+/** Pure formatting and chart geometry helpers. No React here. */
 
 export type Direction = 'up' | 'down' | 'flat';
 
@@ -15,12 +15,6 @@ export function formatLevel(level: number | null | undefined, digits = 2): strin
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
-}
-
-/** Splits a level into the big whole part and the small decimals for the hero. */
-export function splitLevel(level: number): { whole: string; fraction: string } {
-  const [whole = '0', fraction = '00'] = level.toFixed(2).split('.');
-  return { whole, fraction };
 }
 
 /** Change of a level against its base, as text plus a direction for styling. */
@@ -250,4 +244,17 @@ export function nearestIndex(coords: ReadonlyArray<{ x: number }>, x: number): n
     }
   });
   return best;
+}
+
+/** "14:32" in the viewer's own time zone, for intraday charts and expiry. */
+export function formatClock(iso: string | number): string {
+  const t = typeof iso === 'number' ? iso : Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** Market prices are whole index points on chain; anything else shows two decimals. */
+export function formatPoints(value: number | null | undefined): string {
+  if (!isNum(value)) return NA;
+  return formatLevel(value, Number.isInteger(value) ? 0 : 2);
 }
