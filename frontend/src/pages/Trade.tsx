@@ -1,20 +1,33 @@
-import { useEffect, useMemo, useState } from 'react';
-import { formatChange, formatClock, formatLevel, formatPoints } from '../compute/helpers';
-import { getCandles, prepareCancel, type MarketSnapshot } from '../lib/api';
+import { useMemo, useState } from 'react';
+import { formatChange, formatLevel, formatPoints } from '../compute/helpers';
+import { formatChartTime, RangePills } from '../compute/IndexHistory';
+import {
+  applyLiveCandle,
+  applyLivePoint,
+  candlesHaveBodies,
+  cleanCandles,
+  filterRange,
+  latestTime,
+  mergeIndexSeries,
+  RANGES,
+  toSeconds,
+  type Range,
+} from '../compute/series';
+import { getCandles, getComputeHistory, prepareCancel, type MarketSnapshot } from '../lib/api';
 import { formatSigned } from '../lib/format';
 import { formatCountdown } from '../lib/market';
 import { fromOnChainQuantity, referencePrice, tradePnl, tradeSide } from '../lib/trade';
 import { usePolled } from '../lib/usePolled';
-import { AreaChart } from '../ui/AreaChart';
 import { ErrorLine, Skeleton, useHint } from '../ui/bits';
+import { Chart, type ChartMarker, type ChartSeries } from '../ui/Chart';
 import { Counter } from '../ui/Counter';
 import { useNow } from '../ui/useNow';
 import { useAccountData, useMarket, type AccountData } from '../wallet/useAccountData';
 import { useTx } from '../wallet/useTx';
 import { Ticket } from './Ticket';
 
-const CHART_WINDOW_MS = 12 * 3600_000;
-const SESSION_POINTS = 240;
+const CANDLE_SECONDS = 3600;
+const CANDLE_LIMIT = 24 * 90;
 
 function priceOf(snap: MarketSnapshot): number | null {
   return referencePrice({
@@ -56,15 +69,15 @@ function MarketHead({ snap }: { snap: MarketSnapshot }) {
       </p>
       {hint.panel}
       {price !== null ? (
-        <p className="big-number num">
+        <p className="trade-price num">
           <Counter value={price} from={base} digits={Number.isInteger(price) ? 0 : 2} />
         </p>
       ) : (
-        <p className="big-number muted">n/a</p>
+        <p className="trade-price muted">n/a</p>
       )}
       <p className="muted num market-sub">
         <span>
-          {change.text} vs base {formatLevel(base, 0)}
+          <span className={change.direction ?? ''}>{change.text}</span> since base {formatLevel(base, 0)}
         </span>
         <span aria-hidden="true">·</span>
         <SettleLine snap={snap} />
@@ -73,38 +86,109 @@ function MarketHead({ snap }: { snap: MarketSnapshot }) {
   );
 }
 
-/** Index candles when stored; otherwise the readings seen while this page is open. */
+/**
+ * Hourly candles of the index. Without them, the same joined line as the
+ * index page (back-cast, then on-chain settlements). The live level always
+ * moves the newest point.
+ */
 function PriceChart({ snap }: { snap: MarketSnapshot }) {
-  const candles = usePolled(() => getCandles(300), 60_000);
-  const [session, setSession] = useState<Array<{ t: string; value: number }>>([]);
+  const candles = usePolled(() => getCandles(CANDLE_SECONDS, CANDLE_LIMIT), 60_000);
+  const bars = useMemo(() => cleanCandles(candles.data), [candles.data]);
+  const fallback = (candles.data !== null && bars.length < 2) || (candles.data === null && candles.error !== '');
+  const history = usePolled(fallback ? () => getComputeHistory(90) : null, 10 * 60_000, fallback ? 'on' : 'off');
+  const [chosen, setChosen] = useState<Range | null>(null);
+  const [hover, setHover] = useState<{ time: number; value: number } | null>(null);
+
   const level = snap.index?.level ?? null;
+  const asOf = snap.index?.asOfMs ?? null;
+  const live = useMemo(
+    () => (level !== null ? { time: toSeconds(asOf ?? Date.now()), value: level } : null),
+    [level, asOf],
+  );
 
-  useEffect(() => {
-    if (level === null) return;
-    setSession((list) => {
-      const last = list[list.length - 1];
-      if (last && last.value === level && Date.now() - Date.parse(last.t) < 30_000) return list;
-      return [...list, { t: new Date().toISOString(), value: level }].slice(-SESSION_POINTS);
+  // Every range, as the series it would draw.
+  const views = useMemo(() => {
+    const out = new Map<Range, { series: ChartSeries[]; markers: ChartMarker[]; count: number }>();
+    if (bars.length >= 2) {
+      const all = applyLiveCandle(bars, live, CANDLE_SECONDS);
+      const anchor = latestTime(all);
+      for (const r of RANGES) {
+        const inRange = filterRange(all, r, anchor);
+        const series: ChartSeries[] = candlesHaveBodies(inRange)
+          ? [{ id: 'bars', kind: 'candles', candles: inRange }]
+          : [{ id: 'close', kind: 'area', tone: 'cyan', points: inRange.map((c) => ({ time: c.time, value: c.close })) }];
+        out.set(r, { series, markers: [], count: inRange.length });
+      }
+      return out;
+    }
+    const data = history.data;
+    if (!data) return out;
+    const merged = mergeIndexSeries({
+      backcast: data.backcast.points,
+      recorded: data.persisted ? data.points : [],
+      settlements: data.settlements,
     });
-  }, [level, snap]);
+    const real = applyLivePoint(merged.measured, live);
+    const anchor = latestTime(merged.reconstructed, real);
+    for (const r of RANGES) {
+      const rec = filterRange(merged.reconstructed, r, anchor);
+      const mes = filterRange(real, r, anchor);
+      const series: ChartSeries[] = [];
+      if (rec.length) series.push({ id: 'rec', kind: 'area', tone: 'violet', points: mes[0] ? [...rec, mes[0]] : rec });
+      if (mes.length) series.push({ id: 'real', kind: 'area', tone: 'cyan', points: mes });
+      const markers: ChartMarker[] =
+        merged.onchainFrom !== null && mes.some((p) => p.time === merged.onchainFrom)
+          ? [{ seriesId: 'real', time: merged.onchainFrom, text: 'On-chain' }]
+          : [];
+      out.set(r, { series, markers, count: rec.length + mes.length });
+    }
+    return out;
+  }, [bars, live, history.data]);
 
-  const points = useMemo(() => {
-    const cutoff = Date.now() - CHART_WINDOW_MS;
-    const stored = (candles.data ?? [])
-      .filter((c) => c.time * 1000 >= cutoff)
-      .map((c) => ({ t: new Date(c.time * 1000).toISOString(), value: c.close }));
-    return stored.length >= 2 ? stored : session;
-  }, [candles.data, session]);
+  const drawable = (r: Range) => (views.get(r)?.count ?? 0) >= 2;
+  const range: Range =
+    chosen ?? (drawable('1W') ? '1W' : [...RANGES].reverse().find((r) => drawable(r)) ?? '1W');
+  const view = views.get(range);
+  const intraday = range === '1D' || range === '1W';
+  const waiting = candles.loading || (fallback && history.loading);
 
   return (
-    <AreaChart
-      label="Silica Compute Index"
-      points={points}
-      format={(v) => formatLevel(v)}
-      formatTime={formatClock}
-      height={200}
-      empty="The chart fills in as new readings arrive."
-    />
+    <div className="chart-card chart-card-trade">
+      <div className="chart-top">
+        <p className="chart-mini num">
+          {hover ? (
+            <>
+              <b>{formatLevel(hover.value)}</b>
+              <span className="muted">{formatChartTime(hover.time, intraday)}</span>
+            </>
+          ) : (
+            <span className="muted">{bars.length >= 2 ? 'Index, hourly' : 'Index, reconstructed then on-chain'}</span>
+          )}
+        </p>
+        <RangePills
+          value={range}
+          onChange={(r) => {
+            setChosen(r);
+            setHover(null);
+          }}
+          isAvailable={drawable}
+        />
+      </div>
+      {view && view.count >= 2 ? (
+        <Chart
+          series={view.series}
+          markers={view.markers}
+          height={360}
+          intraday={intraday}
+          label={`Silica Compute Index, ${range}`}
+          onCrosshair={setHover}
+        />
+      ) : waiting ? (
+        <Skeleton className="skel-chart" label="Loading the chart" />
+      ) : (
+        <p className="chart-empty muted">No price history yet. It fills in as markets settle.</p>
+      )}
+    </div>
   );
 }
 
@@ -127,7 +211,7 @@ function Book({ snap }: { snap: MarketSnapshot }) {
   const empty = asks.length === 0 && bids.length === 0;
 
   return (
-    <section className="book" aria-label="Order book">
+    <section className="card book" aria-label="Order book">
       <h2 className="label">Order book</h2>
       {empty ? (
         <p className="muted">No orders yet</p>
@@ -201,7 +285,7 @@ function Positions({ snap, data }: { snap: MarketSnapshot; data: AccountData }) 
   }
 
   return (
-    <div className="positions">
+    <div className="card positions">
       <div className="list-block">
         <div className="list-title">
           <h2 className="label">Your position</h2>
@@ -277,7 +361,7 @@ export default function Trade() {
           )}
         </div>
         <div className="trade-chart">
-          <Skeleton className="skel-block" />
+          <Skeleton className="skel-chart" />
         </div>
         <div className="ticket">
           <Skeleton className="skel-block" />
@@ -287,21 +371,17 @@ export default function Trade() {
   }
 
   return (
-    <>
-      <section className="wrap trade">
-        {/* Grid areas put the ticket right under the price on phones. */}
-        <MarketHead snap={snap} />
-        <div className="trade-chart">
-          <PriceChart snap={snap} />
-        </div>
+    <section className="wrap trade">
+      {/* Grid areas put the ticket right under the price on phones. */}
+      <MarketHead snap={snap} />
+      <div className="trade-chart">
+        <PriceChart snap={snap} />
+      </div>
+      <div className={data.accountId ? 'trade-below' : 'trade-below trade-below-solo'}>
         <Book snap={snap} />
-        <Ticket snap={snap} price={priceOf(snap)} data={data} />
-      </section>
-      {data.accountId && (
-        <section className="wrap section section-tight">
-          <Positions snap={snap} data={data} />
-        </section>
-      )}
-    </>
+        {data.accountId && <Positions snap={snap} data={data} />}
+      </div>
+      <Ticket snap={snap} price={priceOf(snap)} data={data} />
+    </section>
   );
 }

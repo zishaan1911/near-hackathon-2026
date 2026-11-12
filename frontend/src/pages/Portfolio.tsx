@@ -22,15 +22,16 @@ import {
   tradeSide,
 } from '../lib/trade';
 import { ErrorLine, Skeleton } from '../ui/bits';
+import { Glow } from '../ui/Glow';
 import { Link } from '../ui/router';
 import { useAccountData, useMarket, type AccountData } from '../wallet/useAccountData';
 import { useTx, type TxRunner } from '../wallet/useTx';
 
 function Balance({ label, value }: { label: string; value: bigint | null }) {
   return (
-    <div className="balance">
-      <dt className="label">{label}</dt>
-      <dd className="balance-value num">
+    <div className="stat">
+      <dt className="stat-label">{label}</dt>
+      <dd className="stat-value num">
         {value === null ? <Skeleton className="skel-text" /> : formatTusdc(value)}
         <span className="unit">tUSDC</span>
       </dd>
@@ -71,7 +72,7 @@ function AmountForm({
   }
 
   return (
-    <form className="amount-form" onSubmit={(e) => void submit(e)} noValidate>
+    <form className="card card-pad amount-form" onSubmit={(e) => void submit(e)} noValidate>
       <label className="label" htmlFor={id}>
         {title}
       </label>
@@ -169,9 +170,11 @@ function History({ data, snap }: { data: AccountData; snap: MarketSnapshot | nul
   }
 
   return (
-    <section className="wrap section section-tight">
-      <div className="list-title">
-        <h2 className="title-sm">History</h2>
+    <section className="wrap section">
+      <div className="section-head section-head-sm">
+        <h2 className="title title-sm">
+          <span>History.</span> <span className="lo">Every trade, newest first.</span>
+        </h2>
         {claimable.length > 1 && (
           <button
             type="button"
@@ -188,7 +191,12 @@ function History({ data, snap }: { data: AccountData; snap: MarketSnapshot | nul
           No trades yet. <Link to={PATHS.trade}>Make your first trade</Link>
         </p>
       ) : (
-        <ul className="list">
+        <ul className="card table-list">
+          <li className="table-list-head small" aria-hidden="true">
+            <span>Side</span>
+            <span>Size and price</span>
+            <span>P&amp;L</span>
+          </li>
           {list.map((r) => {
             const t = r.trade;
             const key = `claim-${t.tradeId}`;
@@ -239,14 +247,19 @@ export default function Portfolio() {
 
   if (!accountId) {
     return (
-      <section className="wrap page-head">
-        <h1 className="title">Portfolio</h1>
-        <p className="lede">Connect a NEAR testnet wallet to see your balances.</p>
+      <section className="page-hero">
+        <Glow variant="soft" />
+        <div className="wrap page-head">
+        <h1 className="display display-md">
+          <span>Portfolio.</span> <span className="lo">Connect a wallet to see it.</span>
+        </h1>
+        <p className="lede">Any NEAR testnet wallet works.</p>
         <p className="actions">
           <button type="button" className="btn btn-lg" onClick={near.connect} disabled={!near.ready}>
             {near.ready ? 'Connect wallet' : 'Loading wallet'}
           </button>
         </p>
+        </div>
       </section>
     );
   }
@@ -262,12 +275,16 @@ export default function Portfolio() {
 
   return (
     <>
-      <section className="wrap page-head">
-        <h1 className="title">Portfolio</h1>
+      <section className="page-hero">
+        <Glow variant="soft" />
+        <div className="wrap page-head">
+        <h1 className="display display-md">
+          <span>Portfolio.</span> <span className="lo">Balances and positions.</span>
+        </h1>
         {account.error && !account.data ? (
           <ErrorLine text={account.error} onRetry={() => void account.reload()} />
         ) : (
-          <dl className="balances">
+          <dl className="stats stats-3">
             <Balance label="Available" value={account.data ? toBig(account.data.available) : null} />
             <Balance label="In positions" value={account.data ? toBig(account.data.locked) : null} />
             <Balance label="Wallet" value={walletUnits} />
@@ -288,9 +305,10 @@ export default function Portfolio() {
             </button>
           </p>
         )}
+        </div>
       </section>
 
-      <section className="wrap section section-tight">
+      <section className="wrap section section-first">
         <div className="forms">
           <AmountForm
             id="deposit"

@@ -1,16 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
-import {
-  getComputeHistory,
-  type ComputeGpu,
-  type ComputeIndexComponent,
-} from '../lib/api';
-import {
-  IMAGE_CREDITS,
-  PEOPLE,
-  PEOPLE_DISCLAIMER,
-  PILLARS,
-  SOURCES,
-} from '../compute/content';
+import { useEffect, useRef } from 'react';
+import type { ComputeGpu } from '../lib/api';
+import { IMAGE_CREDITS, PEOPLE, PEOPLE_DISCLAIMER, SOURCES } from '../compute/content';
 import {
   formatAsOf,
   formatChange,
@@ -19,68 +9,30 @@ import {
   formatPrice,
   formatSpread,
   formatUnit,
-  formatWeight,
   gpuVenueColumns,
   isCheapestVenue,
   venueName,
 } from '../compute/helpers';
+import { IndexChart, useIndexHistory, type IndexHistory } from '../compute/IndexHistory';
+import { PillarCards } from '../compute/Pillars';
 import { useComputeIndex } from '../compute/useComputeIndex';
 import { PATHS } from '../lib/routes';
-import { usePolled } from '../lib/usePolled';
 import { AreaChart } from '../ui/AreaChart';
 import { ErrorLine, Reveal, Skeleton } from '../ui/bits';
 import { Counter } from '../ui/Counter';
+import { Glow } from '../ui/Glow';
 import { Link, useHash } from '../ui/router';
 
 const GPU_UNIT = '$/GPU-hour';
 const HASH_UNIT = '$/TH/day';
 const GAS_UNIT = '$/1M gas';
 
-function Pillars({ components, loading }: { components: ComputeIndexComponent[]; loading: boolean }) {
-  return (
-    <ul className="pillar-list">
-      {PILLARS.map((spec) => {
-        const c = components.find((item) => item.id === spec.id);
-        const unit = c?.unit ?? '';
-        return (
-          <li key={spec.id} className="pillar-row">
-            <img
-              src={spec.image.src}
-              width={spec.image.width}
-              height={spec.image.height}
-              alt={spec.image.alt}
-              loading="lazy"
-              style={{ objectPosition: spec.objectPosition }}
-            />
-            <div className="pillar-text">
-              <h3>{spec.label}</h3>
-              {loading && !c ? (
-                <Skeleton className="skel-text" />
-              ) : c?.status === 'down' ? (
-                <p className="muted small">Source down</p>
-              ) : (
-                <p className="muted small num">
-                  {formatPrice(unit, c?.value)} {unit && formatUnit(unit)}
-                </p>
-              )}
-            </div>
-            <div className="pillar-nums num">
-              <b>{formatLevel(c?.level, 1)}</b>
-              <span className="muted small">{formatWeight(c?.effectiveWeight)}</span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function GpuBoard({ gpus, loading }: { gpus: ComputeGpu[]; loading: boolean }) {
   const columns = gpuVenueColumns(gpus);
   if (loading && gpus.length === 0) return <Skeleton className="skel-block" label="Loading GPU prices" />;
   if (gpus.length === 0) return <p className="muted">GPU prices are not available right now.</p>;
   return (
-    <div className="table-scroll" role="region" aria-label="GPU prices by venue" tabIndex={0}>
+    <div className="table-scroll terminal" role="region" aria-label="GPU prices by venue" tabIndex={0}>
       <table className="table num">
         <thead>
           <tr>
@@ -124,64 +76,43 @@ function GpuBoard({ gpus, loading }: { gpus: ComputeGpu[]; loading: boolean }) {
   );
 }
 
-function History() {
-  const { data, error, reload } = usePolled(() => getComputeHistory(30), 10 * 60_000);
-  const levels = useMemo(
-    () => (data?.points ?? []).map((p) => ({ t: p.t, value: p.level })),
-    [data],
-  );
-
-  if (!data) {
-    return error ? (
-      <ErrorLine text="History did not load." onRetry={() => void reload()} />
-    ) : (
-      <div className="chart-grid">
-        <Skeleton className="skel-block" label="Loading history" />
-        <Skeleton className="skel-block" />
-      </div>
-    );
-  }
-
+function SourceHistory({ data }: { data: IndexHistory }) {
+  const backfill = data.history.data?.backfill;
+  if (!backfill) return null;
   return (
-    <>
-      {data.persisted && levels.length >= 2 && (
-        <AreaChart
-          title="Silica Compute Index"
-          caption="Recorded index levels."
-          points={levels}
-          format={(v) => formatLevel(v)}
-          formatTime={formatDay}
-          height={170}
-        />
-      )}
-      <div className="chart-grid">
+    <div className="chart-grid">
+      <div className="card card-pad">
         <AreaChart
           title="Bitcoin hashprice"
           caption={`USD ${formatUnit(HASH_UNIT)}, from blockchain.info.`}
-          points={data.backfill.btc_hashprice}
+          points={backfill.btc_hashprice}
           format={(v) => formatPrice(HASH_UNIT, v)}
           formatTime={formatDay}
-          empty="No data from this source right now."
-        />
-        <AreaChart
-          title="Ethereum blockspace"
-          caption={`USD ${formatUnit(GAS_UNIT)}, at today's ETH price.`}
-          points={data.backfill.blockspace}
-          format={(v) => formatPrice(GAS_UNIT, v)}
-          formatTime={formatDay}
+          height={150}
           empty="No data from this source right now."
         />
       </div>
-    </>
+      <div className="card card-pad">
+        <AreaChart
+          title="Ethereum blockspace"
+          caption={`USD ${formatUnit(GAS_UNIT)}, at today's ETH price.`}
+          points={backfill.blockspace}
+          format={(v) => formatPrice(GAS_UNIT, v)}
+          formatTime={formatDay}
+          height={150}
+          empty="No data from this source right now."
+        />
+      </div>
+    </div>
   );
 }
 
 function People() {
   return (
     <>
-      <ul className="people">
+      <ul className="people" aria-label="People" tabIndex={0}>
         {PEOPLE.map((person) => (
-          <li key={person.slug}>
+          <li key={person.slug} className="person">
             <div className="person-photo">
               <img
                 src={`/img/compute/${person.slug}.jpg`}
@@ -197,13 +128,15 @@ function People() {
                 }}
               />
             </div>
-            <h3>{person.name}</h3>
-            <p className="muted small">{person.company}</p>
-            <p className="small">{person.line}</p>
+            <div className="person-text">
+              <h3>{person.name}</h3>
+              <p className="muted small">{person.company}</p>
+              <p className="small">{person.line}</p>
+            </div>
           </li>
         ))}
       </ul>
-      <p className="muted small disclaimer">{PEOPLE_DISCLAIMER}</p>
+      <div className="wrap"><p className="muted small disclaimer">{PEOPLE_DISCLAIMER}</p></div>
     </>
   );
 }
@@ -253,7 +186,7 @@ function Method({ baseDate, version }: { baseDate?: string; version?: string }) 
           </div>
           <div>
             <dt>Short history</dt>
-            <dd>GPU, cloud and inference prices have no public history, so the index only has history from its first recorded snapshot.</dd>
+            <dd>GPU, cloud and inference prices have no public history. Before real readings, the chart is a reconstruction from the two pillars that have one.</dd>
           </div>
           <div>
             <dt>Outliers are dropped</dt>
@@ -311,64 +244,91 @@ export default function IndexPage() {
   const change = formatChange(level, base);
   const components = data?.components ?? [];
   const down = components.filter((c) => c.status === 'down').length;
+  const history = useIndexHistory(level !== null ? { level, asOf: index?.asOf } : null);
 
   return (
     <>
-      <section className="wrap page-head">
-        <p className="live-label">
-          <span className={level !== null ? 'dot dot-live' : 'dot'} aria-hidden="true" />
-          <span>Live</span>
-        </p>
-        <h1 className="title">Silica Compute Index</h1>
-        {level !== null ? (
-          <>
-            <p className="big-number num">
-              <Counter value={level} from={base} splitFraction />
-            </p>
-            <p className="muted num">
-              {change.text} vs base {formatLevel(base, 0)}
-              {index?.asOf && <> · {formatAsOf(index.asOf)}</>}
-              {down > 0 && <> · {down} of {components.length} sources down</>}
-            </p>
-          </>
-        ) : loading ? (
-          <Skeleton className="skel-big" label="Loading the index" />
-        ) : (
-          <ErrorLine text={error || 'The index is not available right now.'} onRetry={retry} />
-        )}
-        <p className="lede">What compute costs right now, in one number.</p>
+      <section className="page-hero">
+        <Glow variant="soft" />
+        <div className="wrap page-head">
+          <p className="live-label">
+            <span className={level !== null ? 'dot dot-live' : 'dot'} aria-hidden="true" />
+            <span>Live</span>
+            {index?.asOf && <span className="num">· {formatAsOf(index.asOf)}</span>}
+          </p>
+          <h1 className="display display-md">
+            <span>Silica Compute Index.</span> <span className="lo">What compute costs, in one number.</span>
+          </h1>
+          {level !== null ? (
+            <div className="head-stat">
+              <p className="big-number num">
+                <Counter value={level} from={base} splitFraction />
+              </p>
+              <p className="muted num">
+                <span className={change.direction ?? ''}>{change.text}</span> since base {formatLevel(base, 0)}
+                {down > 0 && <> · {down} of {components.length} sources down</>}
+              </p>
+            </div>
+          ) : loading ? (
+            <Skeleton className="skel-big" label="Loading the index" />
+          ) : (
+            <ErrorLine text={error || 'The index is not available right now.'} onRetry={retry} />
+          )}
+        </div>
       </section>
 
-      <section className="wrap section">
+      <section className="wrap section section-first">
         <Reveal>
-          <h2 className="title">What's inside</h2>
-          <Pillars components={components} loading={loading} />
+          <IndexChart data={history} height={400} />
         </Reveal>
       </section>
 
       <section className="wrap section">
         <Reveal>
-          <h2 className="title">Same chip. Different price.</h2>
-          <p className="lede">Live rental offers, in USD per GPU-hour.</p>
+          <div className="section-head">
+            <h2 className="title">
+              <span>Six pillars.</span> <span className="lo">Each a real market.</span>
+            </h2>
+          </div>
+          <PillarCards components={components} loading={loading} detail />
+        </Reveal>
+      </section>
+
+      <section className="wrap section">
+        <Reveal>
+          <div className="section-head">
+            <h2 className="title">
+              <span>Same chip.</span> <span className="lo">Different price.</span>
+            </h2>
+            <p className="section-aside muted">Live offers, USD per GPU-hour.</p>
+          </div>
           <GpuBoard gpus={data?.gpus ?? []} loading={loading} />
         </Reveal>
       </section>
 
       <section className="wrap section">
         <Reveal>
-          <h2 className="title">The last 30 days</h2>
-          <History />
+          <div className="section-head">
+            <h2 className="title">
+              <span>Two pillars</span> <span className="lo">with public history.</span>
+            </h2>
+          </div>
+          <SourceHistory data={history} />
         </Reveal>
       </section>
 
-      <section className="wrap section">
+      <section className="section">
         <Reveal>
-          <h2 className="title">The people setting the price of compute.</h2>
+          <div className="wrap section-head">
+            <h2 className="title">
+              <span>The people</span> <span className="lo">setting the price of compute.</span>
+            </h2>
+          </div>
           <People />
         </Reveal>
       </section>
 
-      <section className="wrap section section-tight">
+      <section className="wrap section">
         <details ref={method} id="method" className="fold">
           <summary>Methodology</summary>
           <Method baseDate={index?.baseDate} version={index?.methodologyVersion} />
@@ -378,11 +338,20 @@ export default function IndexPage() {
           <p className="muted small">Images are cropped and scaled.</p>
           <Credits />
         </details>
-        <p className="closing">
-          <Link to={PATHS.trade} className="btn btn-lg">
-            Start trading
-          </Link>
-        </p>
+      </section>
+
+      <section className="closing-band closing-band-plain">
+        <Glow variant="band" />
+        <div className="wrap closing-inner">
+          <h2 className="title">
+            <span>Seen enough?</span> <span className="lo">Take a side.</span>
+          </h2>
+          <p className="actions">
+            <Link to={PATHS.trade} className="btn btn-lg">
+              Start trading
+            </Link>
+          </p>
+        </div>
       </section>
     </>
   );
