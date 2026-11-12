@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccountView,
   CancelOrderParams,
   ChainAdapter,
@@ -12,12 +12,12 @@ import type {
   TradeView,
   WithdrawParams,
 } from '@gasx/near-adapter';
-import type { AiClient, EgsiSnapshotDto, ForecastDto, RunCycleInput } from '../src/aiClient.js';
+import type { CciResponse } from '../src/compute/service.js';
 
 export function makeMarketState(overrides: Partial<MarketState> = {}): MarketState {
   return {
     marketId: 'gasx.testnet#1',
-    underlying: 'EGSI-1H',
+    underlying: 'CCI-1H',
     expiryMs: 1_700_000_000_000,
     contractMultiplier: 10,
     tickSize: 10,
@@ -150,50 +150,42 @@ function fakePrepared(summary: PreparedTransaction['summary']): PreparedTransact
   };
 }
 
-export class FakeAiClient implements AiClient {
-  currentEgsi: EgsiSnapshotDto | null = null;
-  forecast: ForecastDto | null = null;
-  runCycleError: Error | null = null;
-  lastRunCycleInput: RunCycleInput | undefined;
-  runCycleResult: EgsiSnapshotDto = makeEgsiSnapshot();
-
-  async getCurrentEgsi(): Promise<EgsiSnapshotDto | null> {
-    return this.currentEgsi;
-  }
-
-  async getForecast(): Promise<ForecastDto | null> {
-    return this.forecast;
-  }
-
-  restoredScores: number[] | null = null;
-
-  async restoreHistory(scores: number[]): Promise<number | null> {
-    this.restoredScores = scores;
-    return scores.length;
-  }
-
-  async runCycle(input?: RunCycleInput): Promise<EgsiSnapshotDto> {
-    if (this.runCycleError) throw this.runCycleError;
-    this.lastRunCycleInput = input;
-    return this.runCycleResult;
-  }
-}
-
-export function makeEgsiSnapshot(overrides: Partial<EgsiSnapshotDto> = {}): EgsiSnapshotDto {
+export function makeCciResponse(level: number | null = 1042.6): CciResponse {
+  const component = (
+    id: string,
+    label: string,
+    effectiveWeight: number,
+    status: 'ok' | 'down' = 'ok',
+  ) =>
+    ({
+      id,
+      label,
+      unit: '$',
+      source: 'test',
+      nominalWeight: effectiveWeight,
+      effectiveWeight,
+      value: 1,
+      baseValue: 1,
+      relative: 1.04,
+      contributionPoints: 40,
+      status,
+      level: status === 'ok' ? 1040 : null,
+    }) as unknown as CciResponse['components'][number];
   return {
-    market: 'EGSI-1H',
-    score: 441,
-    components: {
-      base_fee: 0.4,
-      utilization: 0.5,
-      mempool_pressure: 0.3,
-      fee_momentum: 0.2,
-      gas_volatility: 0.1,
-      dex_activity: 0.3,
-      thetanuts_iv: null,
+    index: {
+      id: 'CCI',
+      name: 'Congest Compute Index',
+      level,
+      base: 1000,
+      baseDate: '2026-11-01',
+      asOf: '2026-11-10T12:00:00.000Z',
+      degraded: false,
+      methodologyVersion: '2.0',
     },
-    block_number: 12345,
-    timestamp: 1_700_000_000,
-    ...overrides,
+    components: [
+      component('gpu_rental', 'GPU rental', 0.35),
+      component('blockspace', 'Ethereum blockspace', 0.05, 'down'),
+    ],
+    gpus: [],
   };
 }

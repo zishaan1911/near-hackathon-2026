@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Environment-driven configuration for the API gateway. Copy .env.example
  * to .env and fill in real values.
  */
@@ -7,9 +7,6 @@ import type { RiskPolicyConfig } from './riskPolicy.js';
 
 export interface GatewayConfig {
   port: number;
-  /** Base URL of the Python AI service (ai/main.py's FastAPI app), e.g.
-   * http://localhost:8000. */
-  aiServiceUrl: string;
   /** MySQL connection URL. Undefined disables persistence entirely —
    * the gateway then runs without durable state (see src/db.ts). */
   databaseUrl: string | undefined;
@@ -43,11 +40,6 @@ function readEnvInt(name: string, fallback: number): number {
 export function loadGatewayConfig(): GatewayConfig {
   return {
     port: readEnvInt('GASX_API_PORT', 3000),
-    // On Vercel the AI service is the Python function at /api/ai on the
-    // same deployment (api/ai.py).
-    aiServiceUrl:
-      readEnv('GASX_API_AI_SERVICE_URL') ||
-      (readEnv('VERCEL_URL') ? `https://${readEnv('VERCEL_URL')}/api/ai` : 'http://localhost:8000'),
     databaseUrl: readEnv('GASX_API_DATABASE_URL') || undefined,
     near: loadNearConfig(),
     riskPolicy: {
@@ -63,8 +55,6 @@ export function loadGatewayConfig(): GatewayConfig {
       // guarding against unfavourable pricing. Set a positive value
       // (e.g. 100 = 1%) to re-enable it.
       maxSlippageBps: readEnvInt('GASX_API_MAX_SLIPPAGE_BPS', 0),
-      minModelConfidence: readEnvInt('GASX_API_MIN_MODEL_CONFIDENCE_PCT', 70) / 100,
-      maxHedgeNotional: readEnvInt('GASX_API_MAX_HEDGE_NOTIONAL', 1000),
     },
     groq: {
       apiKey: readEnv('GASX_API_GROQ_API_KEY') || undefined,
@@ -80,3 +70,4 @@ export function loadGatewayConfig(): GatewayConfig {
     },
   };
 }
+

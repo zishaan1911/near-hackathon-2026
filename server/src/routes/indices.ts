@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Congest Compute Index (CCI) routes:
  *   GET  /api/v1/indices/compute          current level + components + GPU view
  *   GET  /api/v1/indices/compute/history  persisted levels + real backfill
@@ -9,7 +9,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createBackfillSource } from '../compute/history.js';
-import { createComputeService, METHODOLOGY_VERSION } from '../compute/service.js';
+import { METHODOLOGY_VERSION } from '../compute/service.js';
 import type { FetchImpl } from '../compute/types.js';
 import type { GatewayDeps } from '../server.js';
 
@@ -18,8 +18,6 @@ export interface IndicesRouteOptions {
   now?: () => number;
   /** Defaults to process.env; read per request (CRON_SECRET) and once (GASX_ETH_RPC_URL). */
   env?: NodeJS.ProcessEnv;
-  /** Test overrides for the base prices. */
-  baseQuotes?: Record<string, number>;
 }
 
 export const CURRENT_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=300';
@@ -50,13 +48,9 @@ export function registerIndicesRoutes(
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const ethRpcUrl = env.GASX_ETH_RPC_URL || undefined;
-  const common = {
-    fetchImpl,
-    ...(opts.now ? { now: opts.now } : {}),
-    ...(ethRpcUrl ? { ethRpcUrl } : {}),
-    ...(opts.baseQuotes ? { baseQuotes: opts.baseQuotes } : {}),
-  };
-  const getCci = createComputeService(common);
+  // The compute service is shared (built once in app.ts) so every consumer
+  // hits the same cache.
+  const getCci = deps.getCci;
   const getBackfill = createBackfillSource({
     fetchImpl,
     ...(opts.now ? { now: opts.now } : {}),
@@ -101,3 +95,4 @@ export function registerIndicesRoutes(
   app.post('/api/v1/cron/compute-snapshot', cronHandler);
   app.get('/api/v1/cron/compute-snapshot', cronHandler);
 }
+

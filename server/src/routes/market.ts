@@ -1,105 +1,81 @@
 /**
- * ARCHITECTURE.md §9's Trade Flow: "FE->>API: Get market state;
- * API-->>FE: EGSI + orderbook + forecast." (Orderbook itself isn't
- * exposed here — there's no indexer yet; this returns the market/oracle
- * config half plus EGSI/forecast.)
+ * Market routes for the hourly Congest Compute Index (CCI) future:
+ *   GET /api/v1/market   on-chain market state + live CCI level, pillars,
+ *                        on-chain depth and an indicative quote
+ *   GET /api/v1/candles  OHLC buckets of the persisted CCI levels
  */
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../server.js';
 
+const MARKET_ID = 'CCI-1H';
+
 export function registerMarketRoutes(app: FastifyInstance, deps: GatewayDeps): void {
-  /** EGSI as OHLC candles for the chart. */
-  app.get<{ Querystring: { interval?: string; limit?: string; market?: string } }>(
+  /** CCI level as OHLC candles for the chart. */
+  app.get<{ Querystring: { interval?: string; limit?: string } }>(
     '/api/v1/candles',
     async (request, reply) => {
       if (!deps.db) {
         return reply.status(503).send({ error: 'no database configured; see database/README.md' });
       }
-      const market = request.query.market || 'EGSI-1H';
       const interval = Number.parseInt(request.query.interval ?? '300', 10);
       const limit = Number.parseInt(request.query.limit ?? '200', 10);
-      const candles = await deps.db.getEgsiCandles(
-        market,
+      const candles = await deps.db.getComputeIndexCandles(
         Number.isFinite(interval) ? interval : 300,
         Number.isFinite(limit) ? limit : 200,
       );
-      return { market, interval, count: candles.length, candles };
+      return { market: MARKET_ID, interval, count: candles.length, candles };
     },
   );
 
-  /**
-   * Durable EGSI history, oldest first. Exists so ai/inference/train.py
-   * can train on real accumulated readings instead of synthetic data,
-   * without the AI service connecting to the database itself —
-   * ARCHITECTURE.md §2 makes this gateway the only database client, so
-   * history reaches the trainer through here.
-   */
-  app.get<{ Querystring: { limit?: string; market?: string } }>(
-    '/api/v1/history',
-    async (request, reply) => {
-      if (!deps.db) {
-        return reply.status(503).send({
-          error: 'no database configured; set GASX_API_DATABASE_URL (see database/README.md)',
-        });
-      }
-      const market = request.query.market || 'EGSI-1H';
-      const limit = Number.parseInt(request.query.limit ?? '5000', 10);
-      const history = await deps.db.getEgsiHistory(market, Number.isFinite(limit) ? limit : 5000);
-      return { market, count: history.length, history };
-    },
-  );
-
-  app.get('/api/v1/market', async () => {
+  app.get('/api/v1/market', async (request) => {
     // Chain read failures propagate (caught by the server's default error
-    // handler) — market state is this endpoint's core purpose, unlike
-    // egsi/forecast below, which degrade gracefully instead (see
-    // AiClient's doc comments).
+    // handler): market state is this endpoint's core purpose. The index,
+    // pillars, depth and quote degrade instead.
     const market = await deps.chainAdapter.getMarketState();
-    const [egsi, forecast] = await Promise.all([deps.aiClient.getCurrentEgsi(), deps.aiClient.getForecast()]);
 
-    // Durable history (ARCHITECTURE.md §2: the live values above stay
-    // cached in memory; this is the persisted record behind them).
-    // Deliberately not awaited into the response path beyond the writes
-    // themselves — they are best-effort and never fail the request.
-    if (deps.db && egsi) {
-      const snapshotId = await deps.db.recordEgsiSnapshot({
-        market: egsi.market,
-        score: egsi.score,
-        blockNumber: egsi.block_number,
-        blockTimestamp: egsi.timestamp,
-        baseFee: egsi.components.base_fee,
-        utilization: egsi.components.utilization,
-        mempoolPressure: egsi.components.mempool_pressure,
-        feeMomentum: egsi.components.fee_momentum,
-        gasVolatility: egsi.components.gas_volatility,
-        dexActivity: egsi.components.dex_activity,
-        thetanutsIv: egsi.components.thetanuts_iv,
-        thetanutsSkew: null,
-      });
-      if (forecast) {
-        await deps.db.recordForecast(
-          {
-            market: forecast.market,
-            expectedEgsi: forecast.expected_egsi,
-            confidence: forecast.confidence,
-            pTail500: forecast.p_tail_500,
-            modelVersion: forecast.model_version,
-          },
-          snapshotId,
-        );
-      }
+    let index: {
+      level: number | null;
+      base: number;
+      baseDate: string;
+      asOf: string;
+      degraded: boolean;
+    } | null = null;
+    let pillars: Array<{
+      id: string;
+      label: string;
+      level: number | null;
+      effectiveWeight: number;
+      status: 'ok' | 'down';
+    }> = [];
+    try {
+      const cci = await deps.getCci();
+      index = {
+        level: cci.index.level,
+        base: cci.index.base,
+        baseDate: cci.index.baseDate,
+        asOf: cci.index.asOf,
+        degraded: cci.index.degraded,
+      };
+      pillars = cci.components.map((c) => ({
+        id: c.id,
+        label: c.label,
+        level: c.level,
+        effectiveWeight: c.effectiveWeight,
+        status: c.status,
+      }));
+    } catch (err) {
+      request.log.warn({ message: (err as Error).message }, 'compute index unavailable');
     }
 
     // Depth is real: aggregated from on-chain open orders (authoritative,
-    // `source: 'chain'`). The quote is a model suggestion and stays
-    // labelled indicative in the payload.
+    // `source: 'chain'`). The quote stays labelled indicative.
     let orderbook = null;
     let quote = null;
     if (deps.engine) {
-      quote = deps.engine.quoteFromForecast(forecast, 0);
+      quote = deps.engine.quoteFromIndex(index?.level ?? null);
       orderbook = { ...(await deps.engine.getBook()), indicative: true as const };
     }
 
-    return { market, egsi, forecast, orderbook, quote };
+    return { market, index, pillars, orderbook, quote };
   });
 }

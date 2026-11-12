@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ARCHITECTURE.md §8's Hard Risk Policy: "AI can request an action. It
  * cannot bypass policy." — enforced here, outside any model, per §8's
  * own framing ("Enforced outside the language model, in the API/
@@ -22,19 +22,9 @@ export interface RiskPolicyConfig {
   /** MAX_SLIPPAGE, in basis points — how far an order's price may sit
    * from a supplied reference price. Only enforced by checkOrderRisk
    * when a reference price is actually supplied (e.g. from the latest
-   * oracle EGSI value) — omitting one skips this check entirely rather
+   * oracle index value) — omitting one skips this check entirely rather
    * than failing closed on missing data. */
   maxSlippageBps: number;
-  /** MIN_MODEL_CONFIDENCE — minimum AI forecast confidence required
-   * before the AI-driven hedge path (ARCHITECTURE.md §7.2, §10) may
-   * proceed. NOT applied to manual, trader-initiated order placement
-   * (checkOrderRisk) — a human placing their own order isn't "the AI
-   * requesting an action," so gating it on model confidence would be a
-   * category error. Used by checkHedgeRisk instead. */
-  minModelConfidence: number;
-  /** MAX_HEDGE_NOTIONAL — cap on the AI agent's autonomous hedge
-   * notional (ARCHITECTURE.md §8, §10). Used by checkHedgeRisk. */
-  maxHedgeNotional: number;
 }
 
 export type RiskCheckResult = { accepted: true } | { accepted: false; reason: string };
@@ -55,7 +45,7 @@ export interface OrderRiskCheckInput {
   tickSize: number;
   marketPaused: boolean;
   marketSettled: boolean;
-  /** Optional reference price (e.g. the latest oracle EGSI value) —
+  /** Optional reference price (e.g. the latest oracle index value) —
    * enables the MAX_SLIPPAGE check when supplied. */
   referencePrice?: number;
 }
@@ -92,56 +82,4 @@ export function checkOrderRisk(input: OrderRiskCheckInput, policy: RiskPolicyCon
   return accept();
 }
 
-export interface HedgeRiskCheckInput {
-  notional: number;
-  modelConfidence: number;
-}
 
-/**
- * MIN_MODEL_CONFIDENCE on its own, without MAX_HEDGE_NOTIONAL.
- *
- * Exists because the two constants apply at different points and to
- * different quantities. MAX_HEDGE_NOTIONAL caps what the hedge
- * *spends* (the quoted option premium) — but that number isn't known
- * until a market maker has actually quoted, which requires first
- * submitting an RFQ, which costs real gas on Base mainnet. So the
- * confidence floor is checked first, on its own, to avoid spending gas
- * on a hedge that was never going to be allowed anyway.
- *
- * Applying MAX_HEDGE_NOTIONAL to the *exposure* being hedged as a
- * stand-in would be a category error: a large book being hedged with a
- * cheap option is exactly the normal case, and comparing exposure
- * against a premium budget would reject it.
- */
-export function checkHedgeConfidence(modelConfidence: number, policy: RiskPolicyConfig): RiskCheckResult {
-  if (modelConfidence < policy.minModelConfidence) {
-    return reject(
-      `model confidence (${modelConfidence}) is below MIN_MODEL_CONFIDENCE (${policy.minModelConfidence})`,
-    );
-  }
-  return accept();
-}
-
-/**
- * Risk check for the AI-driven hedge path (ARCHITECTURE.md §7.2, §8,
- * §10's "Approve (hard limits passed)" step). Applies
- * MIN_MODEL_CONFIDENCE and MAX_HEDGE_NOTIONAL. This governs whether a
- * hedge *candidate* (blockchain/thetanuts's HedgeCandidate) may be
- * settled — it does not itself settle anything; that's Phase 5's
- * autonomous-execution step (GOALS.md), which this gateway does not
- * implement.
- */
-export function checkHedgeRisk(input: HedgeRiskCheckInput, policy: RiskPolicyConfig): RiskCheckResult {
-  if (!Number.isFinite(input.notional) || input.notional <= 0) {
-    return reject('notional must be a positive number');
-  }
-  if (input.modelConfidence < policy.minModelConfidence) {
-    return reject(
-      `model confidence (${input.modelConfidence}) is below MIN_MODEL_CONFIDENCE (${policy.minModelConfidence})`,
-    );
-  }
-  if (input.notional > policy.maxHedgeNotional) {
-    return reject(`notional (${input.notional}) exceeds MAX_HEDGE_NOTIONAL (${policy.maxHedgeNotional})`);
-  }
-  return accept();
-}

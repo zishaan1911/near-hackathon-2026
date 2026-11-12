@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer, type GatewayDeps } from '../src/server.js';
+import type { CciResponse } from '../src/compute/service.js';
+import { OnChainEngineLayer } from '../src/engineLayer.js';
 import type { RiskPolicyConfig } from '../src/riskPolicy.js';
 import {
-  FakeAiClient,
   FakeChainAdapter,
-  makeEgsiSnapshot,
+  makeCciResponse,
   makeMarketState,
   makeOrderView,
   makeTradeView,
@@ -15,18 +16,25 @@ const riskPolicy: RiskPolicyConfig = {
   maxOrderContracts: 100,
   maxPositionContracts: 500,
   maxSlippageBps: 100,
-  minModelConfidence: 0.7,
-  maxHedgeNotional: 1000,
 };
 
 let app: FastifyInstance;
 let chainAdapter: FakeChainAdapter;
-let aiClient: FakeAiClient;
+let getCci: () => Promise<CciResponse>;
 
 beforeEach(() => {
   chainAdapter = new FakeChainAdapter();
-  aiClient = new FakeAiClient();
-  const deps: GatewayDeps = { chainAdapter, aiClient, riskPolicy, logger: false };
+  getCci = async () => makeCciResponse(1042.6);
+  const deps: GatewayDeps = {
+    chainAdapter,
+    getCci: () => getCci(),
+    engine: new OnChainEngineLayer(
+      { contractMultiplier: 10, marginRatioBps: 1000, maxOrderQuantity: 100, maxNetPosition: 500 },
+      chainAdapter,
+    ),
+    riskPolicy,
+    logger: false,
+  };
   app = buildServer(deps);
 });
 
@@ -39,31 +47,55 @@ describe('GET /api/v1/health', () => {
 });
 
 describe('GET /api/v1/market', () => {
-  it('combines NEAR market state with EGSI and forecast', async () => {
-    chainAdapter.marketState = makeMarketState({ underlying: 'EGSI-1H' });
-    aiClient.currentEgsi = makeEgsiSnapshot({ score: 500 });
+  it('combines NEAR market state with the CCI, pillars, book and quote', async () => {
+    chainAdapter.marketState = makeMarketState({ underlying: 'CCI-1H' });
+    chainAdapter.openOrders = [makeOrderView({ orderId: 1, isBid: true, price: 1040, quantity: 5 })];
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/market' });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.market.underlying).toBe('EGSI-1H');
-    expect(body.egsi.score).toBe(500);
+    expect(body.market.underlying).toBe('CCI-1H');
+    expect(body.index).toEqual({
+      level: 1042.6,
+      base: 1000,
+      baseDate: '2026-11-01',
+      asOf: '2026-11-10T12:00:00.000Z',
+      degraded: false,
+    });
+    expect(body.pillars).toEqual([
+      { id: 'gpu_rental', label: 'GPU rental', level: 1040, effectiveWeight: 0.35, status: 'ok' },
+      { id: 'blockspace', label: 'Ethereum blockspace', level: null, effectiveWeight: 0.05, status: 'down' },
+    ]);
+    expect(body.orderbook.indicative).toBe(true);
+    expect(body.orderbook.bestBid).toEqual({ price: 1040, quantity: 5 });
+    expect(body.quote).toMatchObject({ fairPrice: 1043, bid: 1040, ask: 1046, size: 10, indicative: true });
+    expect(body.egsi).toBeUndefined();
+    expect(body.forecast).toBeUndefined();
   });
 
-  it('still returns market state when the AI service is unreachable (egsi/forecast null)', async () => {
-    aiClient.currentEgsi = null;
-    aiClient.forecast = null;
+  it('degrades (index null, pillars empty) when the compute index throws', async () => {
+    getCci = async () => {
+      throw new Error('upstream exploded');
+    };
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/market' });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.market).toBeDefined();
-    expect(body.egsi).toBeNull();
-    expect(body.forecast).toBeNull();
+    expect(body.index).toBeNull();
+    expect(body.pillars).toEqual([]);
+    expect(body.quote).toBeNull();
   });
 
+  it('has a null quote when the index level is null', async () => {
+    getCci = async () => makeCciResponse(null);
+    const res = await app.inject({ method: 'GET', url: '/api/v1/market' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().index.level).toBeNull();
+    expect(res.json().quote).toBeNull();
+  });
   it('returns 500 when the chain read itself fails', async () => {
     chainAdapter.getMarketStateError = new Error('rpc unreachable');
 
@@ -289,6 +321,37 @@ describe('POST /api/v1/trades/prepare-claim', () => {
   });
 });
 
+describe('GET /api/v1/candles and removed history', () => {
+  it('returns 503 without a database', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/candles' });
+    expect(res.statusCode).toBe(503);
+  });
+
+  it('serves CCI-1H candles from the database', async () => {
+    const seen: Array<[number, number]> = [];
+    const candle = { time: 1_700_000_000, open: 1000, high: 1010, low: 995, close: 1005, samples: 3 };
+    const dbApp = buildServer({
+      chainAdapter,
+      getCci: () => getCci(),
+      riskPolicy,
+      logger: false,
+      db: {
+        getComputeIndexCandles: async (interval: number, limit: number) => {
+          seen.push([interval, limit]);
+          return [candle];
+        },
+      } as unknown as NonNullable<GatewayDeps['db']>,
+    });
+    const res = await dbApp.inject({ method: 'GET', url: '/api/v1/candles?interval=60&limit=5' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ market: 'CCI-1H', interval: 60, count: 1, candles: [candle] });
+    expect(seen).toEqual([[60, 5]]);
+
+    const history = await dbApp.inject({ method: 'GET', url: '/api/v1/history' });
+    expect(history.statusCode).toBe(404);
+  });
+});
+
 describe('removed routes', () => {
   it('no longer serves open-account or hedge endpoints', async () => {
     const open = await app.inject({
@@ -338,3 +401,5 @@ describe('GET /api/v1/account/:accountId', () => {
     });
   });
 });
+
+

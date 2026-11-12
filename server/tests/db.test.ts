@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Database tests.
  *
  * The pure helpers (row mapping, limit clamping, candle bucketing math)
@@ -23,7 +23,7 @@ import {
   createDatabase,
   mapCandleRow,
   mapComputeIndexRow,
-  mapSnapshotRow,
+  PostgresDatabase,
   type Database,
 } from '../src/db.js';
 
@@ -53,45 +53,6 @@ describe('pure helpers', () => {
     expect(bucketStart(5, 1)).toBe(5);
   });
 
-  it('maps a snapshot row, converting strings to numbers and keeping nulls', () => {
-    const mapped = mapSnapshotRow({
-      market: 'EGSI-1H',
-      score: 612,
-      block_number: '21458332',
-      block_timestamp: '1700000000',
-      base_fee: '0.72000',
-      utilization: '0.88000',
-      mempool_pressure: '0.61000',
-      fee_momentum: '0.44000',
-      gas_volatility: '0.29000',
-      dex_activity: '0.53000',
-      thetanuts_iv: null,
-      thetanuts_skew: '-0.05000',
-    });
-    expect(mapped.blockNumber).toBe(21458332);
-    expect(mapped.baseFee).toBeCloseTo(0.72, 5);
-    expect(mapped.thetanutsIv).toBeNull();
-    expect(mapped.thetanutsSkew).toBeCloseTo(-0.05, 5);
-  });
-
-  it('keeps a zero Thetanuts IV as zero, not null', () => {
-    const mapped = mapSnapshotRow({
-      market: 'M',
-      score: 1,
-      block_number: 1,
-      block_timestamp: 1,
-      base_fee: 0,
-      utilization: 0,
-      mempool_pressure: 0,
-      fee_momentum: 0,
-      gas_volatility: 0,
-      dex_activity: 0,
-      thetanuts_iv: '0.00000',
-      thetanuts_skew: null,
-    });
-    expect(mapped.thetanutsIv).toBe(0);
-  });
-
   it('maps a candle row to numbers', () => {
     expect(
       mapCandleRow({ time: '1699999980', open: 100, high: '300', low: 100, close: 200, samples: '3' }),
@@ -118,110 +79,12 @@ describe.skipIf(!url)('PostgresDatabase (real server)', () => {
   });
 
   beforeEach(async () => {
-    // forecast references egsi_snapshot; truncating together with
-    // CASCADE handles ordering.
-    await raw.unsafe('TRUNCATE forecast, egsi_snapshot, prepared_order RESTART IDENTITY CASCADE');
+    await raw.unsafe('TRUNCATE prepared_order RESTART IDENTITY');
   });
 
   afterAll(async () => {
     await db.close();
     await raw.end({ timeout: 5 });
-  });
-
-  function snapshot(overrides: Partial<Parameters<Database['recordEgsiSnapshot']>[0]> = {}) {
-    return {
-      market: 'EGSI-1H',
-      score: 612,
-      blockNumber: 21458332,
-      blockTimestamp: 1_700_000_000,
-      baseFee: 0.72,
-      utilization: 0.88,
-      mempoolPressure: 0.61,
-      feeMomentum: 0.44,
-      gasVolatility: 0.29,
-      dexActivity: 0.53,
-      thetanutsIv: null,
-      thetanutsSkew: null,
-      ...overrides,
-    };
-  }
-
-  it('stores a snapshot and reads it back with values intact', async () => {
-    await db.recordEgsiSnapshot(snapshot());
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-
-    expect(history).toHaveLength(1);
-    expect(history[0]!.score).toBe(612);
-    expect(history[0]!.blockNumber).toBe(21458332);
-    expect(history[0]!.baseFee).toBeCloseTo(0.72, 5);
-  });
-
-  it('returns an id that a forecast can be linked to', async () => {
-    const id = await db.recordEgsiSnapshot(snapshot());
-    expect(id).toBeGreaterThan(0);
-
-    await db.recordForecast(
-      { market: 'EGSI-1H', expectedEgsi: 687.4, confidence: 0.83, pTail500: 0.79, modelVersion: 'egsi-v1' },
-      id,
-    );
-
-    const rows = await raw`SELECT egsi_snapshot_id, confidence FROM forecast`;
-    const row = rows[0]!;
-    expect(Number(row.egsi_snapshot_id)).toBe(id);
-    expect(Number(row.confidence)).toBeCloseTo(0.83, 4);
-  });
-
-  it('is idempotent on the same block, rather than duplicating rows', async () => {
-    const first = await db.recordEgsiSnapshot(snapshot());
-    const second = await db.recordEgsiSnapshot(snapshot());
-
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-    expect(history).toHaveLength(1);
-    // The same row id comes back, so a forecast written on the second
-    // pass still links to the right snapshot.
-    expect(second).toBe(first);
-  });
-
-  it('updates the score when the same block is re-recorded with a new value', async () => {
-    await db.recordEgsiSnapshot(snapshot({ score: 500 }));
-    await db.recordEgsiSnapshot(snapshot({ score: 640 }));
-
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-    expect(history).toHaveLength(1);
-    expect(history[0]!.score).toBe(640);
-  });
-
-  it('preserves a null Thetanuts signal as null, not zero', async () => {
-    await db.recordEgsiSnapshot(snapshot({ thetanutsIv: null }));
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-    expect(history[0]!.thetanutsIv).toBeNull();
-  });
-
-  it('stores a present Thetanuts signal distinctly from an absent one', async () => {
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 1, thetanutsIv: 0, thetanutsSkew: -0.05 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 2, thetanutsIv: null }));
-
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-    expect(history[0]!.thetanutsIv).toBe(0);
-    expect(history[0]!.thetanutsSkew).toBeCloseTo(-0.05, 5);
-    expect(history[1]!.thetanutsIv).toBeNull();
-  });
-
-  it('returns history oldest first, so it can be fed to a model in order', async () => {
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 30, score: 300 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 10, score: 100 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 20, score: 200 }));
-
-    const history = await db.getEgsiHistory('EGSI-1H', 10);
-    expect(history.map((h) => h.score)).toEqual([100, 200, 300]);
-  });
-
-  it('separates markets', async () => {
-    await db.recordEgsiSnapshot(snapshot({ market: 'EGSI-1H', blockNumber: 1 }));
-    await db.recordEgsiSnapshot(snapshot({ market: 'OTHER', blockNumber: 1 }));
-
-    expect(await db.getEgsiHistory('EGSI-1H', 10)).toHaveLength(1);
-    expect(await db.getEgsiHistory('OTHER', 10)).toHaveLength(1);
   });
 
   it('records both prepared and rejected orders', async () => {
@@ -249,29 +112,6 @@ describe.skipIf(!url)('PostgresDatabase (real server)', () => {
     expect(list[1]!.outcome).toBe('rejected');
     expect(String(list[1]!.reject_reason)).toMatch(/MAX_ORDER_CONTRACTS/);
   });
-
-  it('caps an absurd history limit instead of trusting it', async () => {
-    await db.recordEgsiSnapshot(snapshot());
-    // Should not throw on a huge or fractional limit.
-    await expect(db.getEgsiHistory('EGSI-1H', 10_000_000)).resolves.toHaveLength(1);
-    await expect(db.getEgsiHistory('EGSI-1H', 2.7)).resolves.toHaveLength(1);
-  });
-
-  it('aggregates readings into OHLC candles by block order', async () => {
-    // Two 60s buckets: [1_699_999_980, +60) and the next one.
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 1, blockTimestamp: 1_699_999_990, score: 100 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 2, blockTimestamp: 1_699_999_995, score: 300 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 3, blockTimestamp: 1_700_000_040, score: 200 }));
-    await db.recordEgsiSnapshot(snapshot({ blockNumber: 4, blockTimestamp: 1_700_000_050, score: 250 }));
-
-    const candles = await db.getEgsiCandles('EGSI-1H', 60, 10);
-    expect(candles).toEqual([
-      { time: 1_699_999_980, open: 100, high: 300, low: 100, close: 300, samples: 2 },
-      { time: 1_700_000_040, open: 200, high: 250, low: 200, close: 250, samples: 2 },
-    ]);
-    // Oldest first.
-    expect(candles[0]!.time).toBeLessThan(candles[1]!.time);
-  });
 });
 
 describe('compute index snapshots (pure)', () => {
@@ -281,6 +121,41 @@ describe('compute index snapshots (pure)', () => {
       level: 1012.34,
     });
     expect(mapComputeIndexRow({ taken_at: '2026-11-10T12:00:00Z', level: 1000 }).t).toBe('2026-11-10T12:00:00.000Z');
+  });
+});
+
+describe('getComputeIndexCandles (stubbed sql)', () => {
+  function makeDb(rows: unknown[] | Error) {
+    const seen: unknown[][] = [];
+    const sql = (async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+      seen.push(values);
+      if (rows instanceof Error) throw rows;
+      return rows;
+    }) as unknown as ConstructorParameters<typeof PostgresDatabase>[0];
+    const errors: string[] = [];
+    return { db: new PostgresDatabase(sql, { error: (m) => errors.push(m) }), seen, errors };
+  }
+
+  it('maps rows to numbers and returns them oldest first', async () => {
+    const { db } = makeDb([
+      { time: '1700000040', open: '1010.5', high: '1020', low: '1005', close: '1015', samples: '4' },
+      { time: '1699999980', open: '1000', high: '1012', low: '999.5', close: '1010.5', samples: '2' },
+    ]);
+    const candles = await db.getComputeIndexCandles(60, 10);
+    expect(candles.map((c) => c.time)).toEqual([1_699_999_980, 1_700_000_040]);
+    expect(candles[0]).toEqual({ time: 1_699_999_980, open: 1000, high: 1012, low: 999.5, close: 1010.5, samples: 2 });
+  });
+
+  it('clamps the interval and limit it passes to SQL', async () => {
+    const { db, seen } = makeDb([]);
+    await db.getComputeIndexCandles(0.2, 10_000_000);
+    expect(seen[0]).toEqual([1, 1, 5_000]);
+  });
+
+  it('returns [] and logs when the query fails', async () => {
+    const { db, errors } = makeDb(new Error('boom'));
+    await expect(db.getComputeIndexCandles(300, 200)).resolves.toEqual([]);
+    expect(errors[0]).toMatch(/boom/);
   });
 });
 
@@ -322,6 +197,25 @@ describe.skipIf(!url)('compute index snapshots (real server)', () => {
     expect(history[0]!.level).toBeCloseTo(1012.34, 5);
   });
 
+  it('aggregates snapshots into OHLC candles by time order', async () => {
+    const insert = (iso: string, level: number) =>
+      raw.unsafe(
+        `INSERT INTO compute_index_snapshots (taken_at, level, components, methodology_version)
+         VALUES ('${iso}', ${level}, '[]'::jsonb, '2.0')`,
+      );
+    // 2023-11-14T22:13:00Z .. two 60 s buckets.
+    await insert('2023-11-14T22:13:10Z', 1000);
+    await insert('2023-11-14T22:13:15Z', 1030);
+    await insert('2023-11-14T22:14:05Z', 1020);
+    await insert('2023-11-14T22:14:50Z', 1025);
+
+    const candles = await db.getComputeIndexCandles(60, 10);
+    expect(candles).toEqual([
+      { time: 1_700_000_000 - 20, open: 1000, high: 1030, low: 1000, close: 1030, samples: 2 },
+      { time: 1_700_000_000 + 40, open: 1020, high: 1025, low: 1020, close: 1025, samples: 2 },
+    ]);
+  });
+
   it('excludes snapshots older than the window', async () => {
     await raw.unsafe(
       `INSERT INTO compute_index_snapshots (taken_at, level, components, methodology_version)
@@ -331,3 +225,4 @@ describe.skipIf(!url)('compute index snapshots (real server)', () => {
     expect(await db.getComputeIndexHistory(30)).toHaveLength(1);
   });
 });
+

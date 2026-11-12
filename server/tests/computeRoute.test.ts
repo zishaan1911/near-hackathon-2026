@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ComputeIndexPoint, ComputeIndexSnapshotInput, Database } from '../src/db.js';
 import { createBlockspaceSource } from '../src/compute/blockspace.js';
 import { fetchAllComponents } from '../src/compute/fetchers.js';
+import { createComputeService } from '../src/compute/service.js';
 import type { FetchImpl } from '../src/compute/types.js';
 import { clampDays, registerIndicesRoutes } from '../src/routes/indices.js';
 import type { GatewayDeps } from '../src/server.js';
@@ -33,11 +34,12 @@ async function build(opts: { fetchImpl?: FetchImpl; env?: NodeJS.ProcessEnv; db?
   const clock = opts.clock ?? { t: Date.UTC(2026, 10, 11) };
   const app = Fastify();
   const db = opts.db === undefined ? null : opts.db;
-  registerIndicesRoutes(app, { db: db as unknown as Database | null } as unknown as GatewayDeps, {
-    fetchImpl: opts.fetchImpl ?? healthyFetch(),
+  const fetchImpl = opts.fetchImpl ?? healthyFetch();
+  const getCci = createComputeService({ fetchImpl, now: () => clock.t, baseQuotes: await baseFromMock() });
+  registerIndicesRoutes(app, { db: db as unknown as Database | null, getCci } as unknown as GatewayDeps, {
+    fetchImpl,
     now: () => clock.t,
     env: opts.env ?? {},
-    baseQuotes: await baseFromMock(),
   });
   return { app, clock };
 }

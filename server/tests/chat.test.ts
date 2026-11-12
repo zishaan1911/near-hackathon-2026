@@ -1,25 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer, type GatewayDeps } from '../src/server.js';
 import type { RiskPolicyConfig } from '../src/riskPolicy.js';
-import { FakeAiClient, FakeChainAdapter, makeEgsiSnapshot } from './fakes.js';
+import type { CciResponse } from '../src/compute/service.js';
+import { FakeChainAdapter, makeCciResponse } from './fakes.js';
 
 const riskPolicy: RiskPolicyConfig = {
   maxOrderContracts: 100,
   maxPositionContracts: 500,
   maxSlippageBps: 100,
-  minModelConfidence: 0.7,
-  maxHedgeNotional: 1000,
 };
 
 let app: FastifyInstance;
-let aiClient: FakeAiClient;
+let getCci: () => Promise<CciResponse>;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 function buildApp(groq?: { apiKey: string | undefined; model: string }) {
   const deps: GatewayDeps = {
     chainAdapter: new FakeChainAdapter(),
-    aiClient,
+    getCci: () => getCci(),
     riskPolicy,
     logger: false,
     groq,
@@ -37,7 +36,7 @@ function groqSuccess(content: string) {
 }
 
 beforeEach(() => {
-  aiClient = new FakeAiClient();
+  getCci = async () => makeCciResponse(1042.6);
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -95,16 +94,16 @@ describe('POST /api/v1/chat', () => {
 
   it('forwards to Groq with the configured model and returns the reply', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    fetchMock.mockResolvedValue(groqSuccess('GASX is an AI-native gas futures exchange.'));
+    fetchMock.mockResolvedValue(groqSuccess('Congest lists an hourly compute index future.'));
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/chat',
-      payload: { messages: [{ role: 'user', content: 'What is GASX?' }] },
+      payload: { messages: [{ role: 'user', content: 'What is Congest?' }] },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().reply).toBe('GASX is an AI-native gas futures exchange.');
+    expect(res.json().reply).toBe('Congest lists an hourly compute index future.');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -127,26 +126,29 @@ describe('POST /api/v1/chat', () => {
     expect(JSON.stringify(res.json())).not.toContain('super-secret-key');
   });
 
-  it('includes the live EGSI reading in the system prompt when available', async () => {
+  it('includes the live CCI reading and pillars in the system prompt when available', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    aiClient.currentEgsi = makeEgsiSnapshot({ score: 412 });
     fetchMock.mockResolvedValue(groqSuccess('ok'));
 
     await app.inject({
       method: 'POST',
       url: '/api/v1/chat',
-      payload: { messages: [{ role: 'user', content: 'What is the current EGSI?' }] },
+      payload: { messages: [{ role: 'user', content: 'What is the current CCI?' }] },
     });
 
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse(init.body);
     const systemMessage = body.messages[0].content as string;
-    expect(systemMessage).toMatch(/EGSI = 412/);
+    expect(systemMessage).toMatch(/CCI = 1043/);
+    expect(systemMessage).toMatch(/GPU rental: 1040/);
+    expect(systemMessage).toMatch(/Ethereum blockspace: down/);
+    expect(systemMessage).not.toMatch(/EGSI|gas futures/i);
+    expect(systemMessage).toMatch(/not a financial advisor/);
   });
 
   it('tells the model plainly when no live reading exists, rather than omitting the topic', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    aiClient.currentEgsi = null;
+    getCci = async () => makeCciResponse(null);
     fetchMock.mockResolvedValue(groqSuccess('ok'));
 
     await app.inject({
@@ -157,7 +159,7 @@ describe('POST /api/v1/chat', () => {
 
     const [, init] = fetchMock.mock.calls[0]!;
     const systemMessage = JSON.parse(init.body).messages[0].content as string;
-    expect(systemMessage).toMatch(/No live EGSI reading is available/);
+    expect(systemMessage).toMatch(/No live CCI reading is available/);
   });
 
   it('returns 502 when Groq itself errors, with the status surfaced', async () => {
@@ -192,10 +194,10 @@ describe('POST /api/v1/chat', () => {
     expect(res.statusCode).toBe(502);
   });
 
-  it('does not fail the whole request when the AI service is unreachable for context', async () => {
+  it('does not fail the whole request when the compute service throws for context', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    aiClient.getCurrentEgsi = async () => {
-      throw new Error('AI service down');
+    getCci = async () => {
+      throw new Error('compute down');
     };
     fetchMock.mockResolvedValue(groqSuccess('ok'));
 
@@ -208,3 +210,4 @@ describe('POST /api/v1/chat', () => {
     expect(res.statusCode).toBe(200);
   });
 });
+
