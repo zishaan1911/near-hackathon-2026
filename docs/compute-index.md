@@ -1,6 +1,6 @@
-# Congest Compute Index (CCI): methodology v2.0
+# Silica Compute Index (SCI): methodology v2.0
 
-The CCI is a composite price index of "compute" across six markets. It starts at **1000** on its base date (2026-11-11) and moves with the weighted geometric mean of how each component's price has changed since then. It is built from free, public data anyone can re-run, and is designed as the settlement reference for a cash-settled futures market on NEAR.
+The SCI is a composite price index of "compute" across six markets. It starts at **1000** on its base date (2026-11-11) and moves with the weighted geometric mean of how each component's price has changed since then. It is built from free, public data anyone can re-run, and is designed as the settlement reference for a cash-settled futures market on NEAR.
 
 Code: `server/src/compute/`. Endpoints: `GET /api/v1/indices/compute`, `GET /api/v1/indices/compute/history`.
 
@@ -75,7 +75,7 @@ The index no longer depends on the AI service.
 
 ## Why v1.0's EGSI component was replaced
 
-v1.0 used Congest's own EGSI score (0-1000) as the blockspace component. It was too noisy for a price index: a bounded stress score swings with short-lived block utilisation rather than the price of gas, it is not a price, and it tied the index to a separate service. v2.0 uses the actual price of blockspace: the 7-day median base fee in dollars per million gas, which is smooth, observable by anyone with an RPC endpoint, and comparable in kind to the other components. Its weight was cut from 10% to 5%.
+v1.0 used an earlier EGSI score (0-1000) as the blockspace component. It was too noisy for a price index: a bounded stress score swings with short-lived block utilisation rather than the price of gas, it is not a price, and it tied the index to a separate service. v2.0 uses the actual price of blockspace: the 7-day median base fee in dollars per million gas, which is smooth, observable by anyone with an RPC endpoint, and comparable in kind to the other components. Its weight was cut from 10% to 5%.
 
 ## Known limitations (disclose these)
 
@@ -89,7 +89,7 @@ v1.0 used Congest's own EGSI score (0-1000) as the blockspace component. It was 
 
 ## From index to futures
 
-The NEAR contract already trades any price between 0 and `max_price`. For the CCI:
+The NEAR contract already trades any price between 0 and `max_price`. For the SCI (market `SCI-1H`):
 
 - Contract price = `round(level)` (base 1000). One tick is 0.1% of base.
 - Set `max_price` to 10,000 (10x base).
