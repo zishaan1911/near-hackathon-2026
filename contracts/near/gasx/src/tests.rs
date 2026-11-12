@@ -356,6 +356,35 @@ fn publisher_rolls_the_next_market_with_same_parameters() {
 }
 
 #[test]
+fn raising_max_price_allows_higher_prices_and_orders() {
+    let mut c = setup();
+    set("owner.near", T0_MS);
+    c.set_max_price(10_000);
+    assert_eq!(c.get_oracle().max_price, 10_000);
+    publish(&mut c, 1_500, T0_MS + 1);
+    assert_eq!(c.get_oracle().price, 1_500);
+    set("alice.near", T0_MS + 2);
+    let id = c.place_order(true, 1_500, 1);
+    assert_eq!(c.get_order(id).unwrap().price, 1_500);
+}
+
+#[test]
+#[should_panic(expected = "owner only")]
+fn only_owner_sets_max_price() {
+    let mut c = setup();
+    set("alice.near", T0_MS);
+    c.set_max_price(10_000);
+}
+
+#[test]
+#[should_panic(expected = "max_price must be positive")]
+fn max_price_cannot_be_zero() {
+    let mut c = setup();
+    set("owner.near", T0_MS);
+    c.set_max_price(0);
+}
+
+#[test]
 #[should_panic(expected = "owner or publisher only")]
 fn strangers_cannot_roll_markets() {
     let mut c = setup();

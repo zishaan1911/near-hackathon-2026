@@ -358,6 +358,13 @@ impl Contract {
         self.oracle.max_staleness_ms = max_staleness_ms;
     }
 
+    /// Owner-only. Sets the oracle's and the order book's price ceiling.
+    pub fn set_max_price(&mut self, max_price: u64) {
+        self.assert_owner();
+        require!(max_price > 0, "max_price must be positive");
+        self.oracle.max_price = max_price;
+    }
+
     // ---- oracle ---------------------------------------------------------
 
     /// Publisher-only. Rejects a price above `max_price` before touching state.
