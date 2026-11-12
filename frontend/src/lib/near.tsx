@@ -59,6 +59,8 @@ interface NearContextValue {
   disconnect: () => Promise<void>;
   /** Resolves with the transaction hash when the wallet reports one. */
   signAndSend: (prepared: PreparedTransaction) => Promise<string | null>;
+  /** Signs several transactions in one approval; resolves with the last hash when reported. */
+  signAndSendMany: (prepared: PreparedTransaction[]) => Promise<string | null>;
 }
 
 const NearContext = createContext<NearContextValue | null>(null);
@@ -114,6 +116,38 @@ export function NearProvider({ children }: { children: ReactNode }) {
     [selection],
   );
 
+  const signAndSendMany = useCallback(
+    async (prepared: PreparedTransaction[]): Promise<string | null> => {
+      if (!selection) throw new Error('The NEAR wallet is still loading. Try again in a moment.');
+      if (prepared.length === 0) return null;
+
+      const wallet = await selection.selector.wallet();
+      let outcomes;
+      try {
+        outcomes = await wallet.signAndSendTransactions({
+          transactions: prepared.map((p) => ({
+            receiverId: p.receiverId,
+            actions: p.actions.map(internalActionToNaj),
+          })),
+        });
+      } catch (error) {
+        // Some wallets cannot batch; fall back to one approval per transaction.
+        const text = error instanceof Error ? error.message : '';
+        const unsupported =
+          error instanceof TypeError || /not\s+(supported|implemented)|unsupported|does not support/i.test(text);
+        if (!unsupported) throw error;
+        let hash: string | null = null;
+        for (const item of prepared) hash = await signAndSend(item);
+        return hash;
+      }
+
+      const last = Array.isArray(outcomes) ? outcomes[outcomes.length - 1] : null;
+      const hash: unknown = last?.transaction?.hash;
+      return typeof hash === 'string' ? hash : null;
+    },
+    [selection, signAndSend],
+  );
+
   const value = useMemo<NearContextValue>(
     () => ({
       ready: selection !== null,
@@ -121,8 +155,9 @@ export function NearProvider({ children }: { children: ReactNode }) {
       connect,
       disconnect,
       signAndSend,
+      signAndSendMany,
     }),
-    [selection, accountId, connect, disconnect, signAndSend],
+    [selection, accountId, connect, disconnect, signAndSend, signAndSendMany],
   );
 
   return <NearContext.Provider value={value}>{children}</NearContext.Provider>;

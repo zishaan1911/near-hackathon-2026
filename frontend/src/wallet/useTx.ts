@@ -19,26 +19,31 @@ export interface TxRunner extends TxState {
   run: (
     key: string,
     build: () => Promise<PreparedTransaction | PreparedTransaction[]>,
+    options?: { /** Sign a list in one wallet approval. */ batch?: boolean },
   ) => Promise<string | null | false>;
   clear: () => void;
 }
 
 /** One wallet action at a time, with its status and a short error line. */
 export function useTx(): TxRunner {
-  const { signAndSend } = useNear();
+  const { signAndSend, signAndSendMany } = useNear();
   const [state, setState] = useState<TxState>({ busy: null, error: '', done: null });
   const inFlight = useRef(false);
 
   const run = useCallback<TxRunner['run']>(
-    async (key, build) => {
+    async (key, build, options) => {
       if (inFlight.current) return false;
       inFlight.current = true;
       setState({ busy: key, error: '', done: null });
       try {
         const prepared = await build();
         let hash: string | null = null;
-        for (const tx of Array.isArray(prepared) ? prepared : [prepared]) {
-          hash = await signAndSend(tx);
+        if (options?.batch && Array.isArray(prepared)) {
+          hash = await signAndSendMany(prepared);
+        } else {
+          for (const tx of Array.isArray(prepared) ? prepared : [prepared]) {
+            hash = await signAndSend(tx);
+          }
         }
         setState({ busy: null, error: '', done: { key, hash } });
         return hash;
@@ -49,7 +54,7 @@ export function useTx(): TxRunner {
         inFlight.current = false;
       }
     },
-    [signAndSend],
+    [signAndSend, signAndSendMany],
   );
 
   const clear = useCallback(() => setState({ busy: null, error: '', done: null }), []);
