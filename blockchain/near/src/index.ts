@@ -10,6 +10,7 @@ export type {
   ClaimParams,
   DepositParams,
   MarketState,
+  MarketSummary,
   OracleState,
   OrderStatus,
   OrderView,

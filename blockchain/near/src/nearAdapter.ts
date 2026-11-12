@@ -19,6 +19,7 @@ import type { NearAdapterConfig } from './config.js';
 import { fetchDevMarketState } from './devMarket.js';
 import {
   fetchMarketState,
+  fetchMarketSummary,
   parseAccountView,
   parseOrderViews,
   parseTradeViews,
@@ -30,6 +31,7 @@ import type {
   ClaimParams,
   DepositParams,
   MarketState,
+  MarketSummary,
   OrderView,
   PageOptions,
   PlaceOrderParams,
@@ -75,6 +77,11 @@ export class NearChainAdapter implements ChainAdapter {
     return this.config.devMarket
       ? Promise.resolve(fetchDevMarketState(this.config))
       : fetchMarketState(this.config);
+  }
+
+  async getMarketById(marketNumber: number): Promise<MarketSummary | null> {
+    if (this.config.devMarket) return null;
+    return fetchMarketSummary(this.config, marketNumber);
   }
 
   async getAccount(accountId: string): Promise<AccountView> {

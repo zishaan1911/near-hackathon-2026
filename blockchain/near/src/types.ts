@@ -46,6 +46,16 @@ export interface OracleState {
   isFreshApprox: boolean;
 }
 
+/** One numbered market read by id (GET get_market { market_id }). */
+export interface MarketSummary {
+  marketNumber: number;
+  underlying: string;
+  expiryMs: number;
+  settled: boolean;
+  /** Null until settled. */
+  settlementPrice: number | null;
+}
+
 export type OrderStatus = 'open' | 'filled' | 'cancelled';
 
 /** The contract's OrderView in camelCase. Amounts stay decimal strings. */
@@ -140,6 +150,8 @@ export interface ClaimParams {
  * a live network. */
 export interface ChainAdapter {
   getMarketState(): Promise<MarketState>;
+  /** Reads market marketNumber (1..current). Null when it does not exist or in dev-market mode. */
+  getMarketById(marketNumber: number): Promise<MarketSummary | null>;
   getAccount(accountId: string): Promise<AccountView>;
   getOpenOrders(opts?: PageOptions): Promise<OrderView[]>;
   getOrdersByAccount(accountId: string, opts?: PageOptions): Promise<OrderView[]>;

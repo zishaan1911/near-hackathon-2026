@@ -12,7 +12,7 @@
  */
 import { viewCall } from './client.js';
 import type { NearAdapterConfig } from './config.js';
-import type { AccountView, MarketState, OracleState, OrderStatus, OrderView, TradeView } from './types.js';
+import type { AccountView, MarketState, MarketSummary, OracleState, OrderStatus, OrderView, TradeView } from './types.js';
 
 type ViewJson = Record<string, unknown>;
 
@@ -150,6 +150,27 @@ export function parseOrderViews(views: unknown): OrderView[] {
 export function parseTradeViews(views: unknown): TradeView[] {
   if (!Array.isArray(views)) throw new Error(`expected a TradeView array, got ${JSON.stringify(views)}`);
   return views.map(parseTradeView);
+}
+
+/** Reads market marketNumber via get_market { market_id }. Null when the market does not exist. */
+export async function fetchMarketSummary(config: NearAdapterConfig, marketNumber: number): Promise<MarketSummary | null> {
+  let view: unknown;
+  try {
+    view = await viewCall<unknown>(config, config.contractId, 'get_market', { market_id: marketNumber });
+  } catch (err) {
+    // A contract panic for an unknown id is a normal "no such market".
+    if (err instanceof Error && /failed:/.test(err.message)) return null;
+    throw err;
+  }
+  if (view === null || view === undefined) return null;
+  const m = parseMarketView(view, config.contractId);
+  return {
+    marketNumber,
+    underlying: m.underlying,
+    expiryMs: m.expiryMs,
+    settled: m.settled,
+    settlementPrice: m.settlementPrice,
+  };
 }
 
 /** Fetches and parses both the market and the oracle in parallel. NOT
