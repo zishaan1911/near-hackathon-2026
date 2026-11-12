@@ -48427,18 +48427,19 @@ function envNumber2(name, fallback) {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
-async function fetchScore(aiUrl) {
-  const res = await fetch(`${aiUrl.replace(/\/$/, "")}/egsi/current`);
+async function fetchScore(apiUrl) {
+  const res = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/indices/compute`);
   if (!res.ok) {
-    log3("ai service returned an error", { status: res.status });
+    log3("index endpoint returned an error", { status: res.status });
     return null;
   }
   const body = await res.json();
-  return typeof body.score === "number" ? body.score : null;
+  const level = body.index?.level;
+  return typeof level === "number" ? level : null;
 }
-async function tick2(contractId, aiUrl, config2, publisher) {
+async function tick2(contractId, apiUrl, config2, publisher) {
   const oracle = await viewCall(config2, contractId, "get_oracle", {});
-  const score = await fetchScore(aiUrl);
+  const score = await fetchScore(apiUrl);
   const price = score === null ? null : toOraclePrice(score, oracle.max_price);
   if (price === null) {
     log3("skipping publish: no usable score", { score });
@@ -48468,14 +48469,14 @@ async function main2() {
   const contractId = process.env.GASX_NEAR_CONTRACT_ID;
   if (!contractId)
     throw new Error("GASX_NEAR_CONTRACT_ID is required (see .env.example)");
-  const aiUrl = process.env.GASX_PUBLISH_AI_URL || "http://ai:8000";
+  const apiUrl = process.env.GASX_PUBLISH_API_URL || "http://localhost:3000";
   const intervalMs = envNumber2("GASX_PUBLISH_INTERVAL_SECONDS", 60) * 1e3;
   const config2 = loadConfigFromEnv();
   const publisher = createSigner("GASX_NEAR_PUBLISHER_ACCOUNT_ID", "GASX_NEAR_PUBLISHER_PRIVATE_KEY");
-  log3("started", { contractId, aiUrl, intervalMs, publisher: publisher.accountId });
+  log3("started", { contractId, apiUrl, intervalMs, publisher: publisher.accountId });
   for (; ; ) {
     try {
-      await tick2(contractId, aiUrl, config2, publisher);
+      await tick2(contractId, apiUrl, config2, publisher);
     } catch (err) {
       log3("tick failed", { error: err.message });
     }
@@ -48492,7 +48493,7 @@ if (process.argv[1] && import_meta2.url === (0, import_node_url2.pathToFileURL)(
 // ../blockchain/near/dist/tick.js
 var TGAS_303 = "30000000000000";
 var PAGE_SIZE2 = 100;
-var MIN_UPDATE_AGE_MS = 2e4;
+var MIN_UPDATE_AGE_MS = 6e4;
 var MIN_MARKET_LIFE_MS = 10 * 6e4;
 var HOUR_MS = 60 * 6e4;
 function nextExpiryMs(nowMs) {
@@ -48505,7 +48506,6 @@ function message(err) {
 async function runTick(ctx) {
   const now = ctx.now ?? Date.now;
   const view = ctx.view ?? viewCall;
-  const fetchImpl = ctx.fetchImpl ?? fetch;
   const report = { matched: [], errors: [] };
   const call = (methodName, args) => ctx.signer.callFunction({
     contractId: ctx.contractId,
@@ -48530,13 +48530,10 @@ async function runTick(ctx) {
     try {
       const fresh = oracle.has_price && now() - oracle.last_update_ms < MIN_UPDATE_AGE_MS;
       if (!fresh) {
-        const res = await fetchImpl(`${ctx.aiUrl.replace(/\/$/, "")}/egsi/current`);
-        if (!res.ok)
-          throw new Error(`ai service returned HTTP ${res.status}`);
-        const body = await res.json();
-        const price = typeof body.score === "number" ? toOraclePrice(body.score, oracle.max_price) : null;
+        const level = await ctx.getPrice();
+        const price = level === null ? null : toOraclePrice(level, oracle.max_price);
         if (price === null)
-          throw new Error("ai service returned no usable score");
+          throw new Error("no usable index level");
         await call("update_price", { price });
         report.published = price;
       }
@@ -48596,84 +48593,792 @@ async function runTick(ctx) {
   return report;
 }
 
-// src/aiClient.ts
-var AiServiceError = class extends Error {
-  constructor(message2, status) {
-    super(message2);
-    this.status = status;
-    this.name = "AiServiceError";
-  }
-  status;
+// src/compute/base.ts
+var BASE_DATE = "2026-11-11";
+var BASE_QUOTES = {
+  "ai/anthropic/claude-haiku-4.5": 2,
+  "ai/deepseek/deepseek-v3.2": 0.29,
+  "ai/google/gemini-3.1-flash-lite": 0.5625,
+  "ai/meta-llama/llama-3.3-70b-instruct": 0.71,
+  "ai/mistralai/mistral-large-2512": 0.75,
+  "ai/openai/gpt-4o-mini": 0.2625,
+  "ai/qwen/qwen3.6-plus": 0.73125,
+  "ai/x-ai/grok-4.3": 1.5625,
+  "btc/hashprice": 0.035437672,
+  "cloud_cpu/compute_x86/aws-c7i.xlarge": 0.0197375,
+  "cloud_cpu/general_arm/aws-m7g.xlarge": 0.014475,
+  "cloud_cpu/general_x86/aws-m7i.xlarge": 0.01985,
+  "cloud_cpu/general_x86/azure-standard_d4s_v5": 0.010379375,
+  "cloud_cpu/memory_x86/aws-r7i.xlarge": 0.024175,
+  "cloud_gpu/a100/aws-p4d.24xlarge": 0.775625,
+  "cloud_gpu/a100/azure-standard_nc24ads_a100_v4": 0.746354,
+  "cloud_gpu/a10g/aws-g5.xlarge": 0.4461,
+  "cloud_gpu/h100/aws-p5.48xlarge": 4.4648375,
+  "cloud_gpu/h100/azure-standard_nc40ads_h100_v5": 2.731594,
+  "cloud_gpu/l4/aws-g6.xlarge": 0.1046,
+  "eth/blockspace": 0.12317898,
+  "gpu/a100/akash": 1.67,
+  "gpu/a100/runpod": 1.79,
+  "gpu/a100/vast": 0.9237037,
+  "gpu/h100/akash": 2.73,
+  "gpu/h100/runpod": 3.99,
+  "gpu/h100/vast": 3.3551444,
+  "gpu/rtx4090/runpod": 0.89,
+  "gpu/rtx4090/vast": 0.49288889
 };
-var HttpAiClient = class {
-  constructor(baseUrl) {
-    this.baseUrl = baseUrl;
+var BASE_VALUES = {
+  gpu_rental: 1.73,
+  cloud_gpu_spot: 0.7609895,
+  cloud_cpu_spot: 0.0197375,
+  ai_inference: 0.720625,
+  btc_hashprice: 0.035437672,
+  blockspace: 0.12317898
+};
+
+// src/compute/http.ts
+var TIMEOUT_MS = 8e3;
+async function fetchOk(fetchImpl, url, init, timeoutMs) {
+  let res;
+  try {
+    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   }
-  baseUrl;
-  /** Returns null (rather than throwing) on any failure — including the
-   * AI service being unreachable, or a 503 because it has no snapshot
-   * yet (ai/main.py's own "no EGSI snapshot yet — call POST /cycle
-   * first" state). GET /api/v1/market composes this with the Sui read;
-   * a down AI service shouldn't take the whole market-state response
-   * down with it, just omit the egsi field. */
-  async getCurrentEgsi() {
-    try {
-      const res = await fetch(`${this.baseUrl}/egsi/current`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
+  return res;
+}
+async function fetchJson(fetchImpl, url, init) {
+  return (await fetchOk(fetchImpl, url, init, TIMEOUT_MS)).json();
+}
+async function fetchText(fetchImpl, url, init, timeoutMs = TIMEOUT_MS) {
+  return (await fetchOk(fetchImpl, url, init, timeoutMs)).text();
+}
+function isRecord(x) {
+  return typeof x === "object" && x !== null;
+}
+function num(x) {
+  const n = typeof x === "string" ? Number(x) : x;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+function errMsg(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+
+// src/compute/stats.ts
+function median(xs) {
+  if (xs.length === 0) throw new Error("median of empty array");
+  const s = [...xs].sort((a, b2) => a - b2);
+  const mid = Math.floor(s.length / 2);
+  const lo = s[mid - 1];
+  const hi = s[mid];
+  return s.length % 2 ? hi : (lo + hi) / 2;
+}
+function trim(xs, frac) {
+  const s = [...xs].sort((a, b2) => a - b2);
+  const k = Math.floor(s.length * frac);
+  return s.slice(k, s.length - k);
+}
+function weightedGeoMean(items) {
+  const wsum = items.reduce((a, i) => a + i.weight, 0);
+  if (items.length === 0 || wsum <= 0) throw new Error("empty geometric mean");
+  return Math.exp(items.reduce((a, i) => a + i.weight / wsum * Math.log(i.value), 0));
+}
+
+// src/compute/blockspace.ts
+var DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com";
+var SAMPLE_SPACING_BLOCKS = 300;
+var SAMPLE_COUNT = 168;
+var RPC_BATCH_SIZE = 50;
+var MIN_SAMPLES = 84;
+var MEDIAN_TTL_MS = 36e5;
+var COINGECKO_ETH_URL = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd";
+var CHAINLINK_ETH_USD = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
+var CHAINLINK_LATEST_ROUND = "0x50d25bcd";
+function usdPerMillionGas(gwei, ethUsd) {
+  return gwei * 1e-3 * ethUsd;
+}
+function hexToNumber2(x) {
+  if (typeof x !== "string" || !/^0x[0-9a-fA-F]+$/.test(x)) return null;
+  const n = Number(BigInt(x));
+  return Number.isFinite(n) ? n : null;
+}
+async function rpcBatch(fetchImpl, rpcUrl, calls) {
+  const body = calls.map((c, i) => ({ jsonrpc: "2.0", id: i, method: c.method, params: c.params }));
+  const res = await fetchJson(fetchImpl, rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!Array.isArray(res)) throw new Error("JSON-RPC batch: unexpected response");
+  const out = new Array(calls.length).fill(null);
+  for (const r of res) {
+    if (!isRecord(r)) continue;
+    const id2 = num(r.id);
+    if (id2 !== null && id2 >= 0 && id2 < calls.length) out[id2] = r.result ?? null;
+  }
+  return out;
+}
+async function fetchBlockNumber(fetchImpl, rpcUrl) {
+  const [res] = await rpcBatch(fetchImpl, rpcUrl, [{ method: "eth_blockNumber", params: [] }]);
+  const n = hexToNumber2(res);
+  if (n === null) throw new Error("eth_blockNumber: bad result");
+  return n;
+}
+function sampleBlockNumbers(latest, spacing, count) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const b2 = latest - i * spacing;
+    if (b2 < 0) break;
+    out.push(b2);
+  }
+  return out;
+}
+async function fetchBaseFees(fetchImpl, rpcUrl, blocks) {
+  const batches = [];
+  for (let i = 0; i < blocks.length; i += RPC_BATCH_SIZE) batches.push(blocks.slice(i, i + RPC_BATCH_SIZE));
+  const settled = await Promise.allSettled(
+    batches.map(
+      (batch) => rpcBatch(
+        fetchImpl,
+        rpcUrl,
+        batch.map((b2) => ({ method: "eth_getBlockByNumber", params: ["0x" + b2.toString(16), false] }))
+      )
+    )
+  );
+  const out = [];
+  settled.forEach((s, bi) => {
+    if (s.status !== "fulfilled") return;
+    s.value.forEach((blk, i) => {
+      if (!isRecord(blk)) return;
+      const fee = hexToNumber2(blk.baseFeePerGas);
+      const ts = hexToNumber2(blk.timestamp);
+      const block = batches[bi]?.[i];
+      if (fee === null || ts === null || block === void 0) return;
+      out.push({ block, timestamp: ts, gwei: fee / 1e9 });
+    });
+  });
+  return out.sort((a, b2) => a.block - b2.block);
+}
+async function fetchEthUsd(fetchImpl, rpcUrl) {
+  try {
+    const cg = await fetchJson(fetchImpl, COINGECKO_ETH_URL);
+    const eth = isRecord(cg) ? cg.ethereum : void 0;
+    const p = isRecord(eth) ? num(eth.usd) : null;
+    if (p !== null && p > 0) return { price: p, source: "coingecko" };
+  } catch {
+  }
+  const [res] = await rpcBatch(fetchImpl, rpcUrl, [
+    { method: "eth_call", params: [{ to: CHAINLINK_ETH_USD, data: CHAINLINK_LATEST_ROUND }, "latest"] }
+  ]);
+  if (typeof res !== "string" || !/^0x[0-9a-fA-F]+$/.test(res)) throw new Error("Chainlink ETH/USD: bad result");
+  const price = Number(BigInt(res)) / 1e8;
+  if (!(price > 0)) throw new Error("Chainlink ETH/USD: non-positive answer");
+  return { price, source: "chainlink" };
+}
+function createBlockspaceSource(opts) {
+  const rpcUrl = opts.rpcUrl ?? DEFAULT_ETH_RPC_URL;
+  const now = opts.now ?? (() => Date.now());
+  const ttl = opts.ttlMs ?? MEDIAN_TTL_MS;
+  let cached = null;
+  let inflight = null;
+  async function sampleMedian() {
+    if (cached && now() - cached.at < ttl) return cached;
+    if (inflight) return inflight;
+    inflight = (async () => {
+      const latest = await fetchBlockNumber(opts.fetchImpl, rpcUrl);
+      const fees = await fetchBaseFees(opts.fetchImpl, rpcUrl, sampleBlockNumbers(latest, SAMPLE_SPACING_BLOCKS, SAMPLE_COUNT));
+      if (fees.length < MIN_SAMPLES) throw new Error(`only ${fees.length}/${SAMPLE_COUNT} base-fee samples`);
+      const result = { medianGwei: median(fees.map((f) => f.gwei)), samples: fees.length };
+      cached = { at: now(), ...result };
+      return result;
+    })().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  }
+  return async () => {
+    const [m, eth] = await Promise.all([sampleMedian(), fetchEthUsd(opts.fetchImpl, rpcUrl)]);
+    return {
+      value: usdPerMillionGas(m.medianGwei, eth.price),
+      medianGwei: m.medianGwei,
+      ethUsd: eth.price,
+      ethUsdSource: eth.source,
+      samples: m.samples
+    };
+  };
+}
+
+// src/compute/basket.ts
+var GPU_PRODUCTS = [
+  { id: "h100", label: "NVIDIA H100", weight: 0.5, vastName: "H100 SXM", runpodId: "NVIDIA H100 80GB HBM3", akashModel: "h100" },
+  { id: "a100", label: "NVIDIA A100", weight: 0.3, vastName: "A100 SXM4", runpodId: "NVIDIA A100-SXM4-80GB", akashModel: "a100" },
+  { id: "rtx4090", label: "NVIDIA RTX 4090", weight: 0.2, vastName: "RTX 4090", runpodId: "NVIDIA GeForce RTX 4090", akashModel: "rtx4090" }
+];
+var GPU_VENUES = ["vast", "runpod", "akash"];
+var MODEL_BASKET = [
+  "openai/gpt-4o-mini",
+  "anthropic/claude-haiku-4.5",
+  "google/gemini-3.1-flash-lite",
+  "meta-llama/llama-3.3-70b-instruct",
+  "mistralai/mistral-large-2512",
+  "deepseek/deepseek-v3.2",
+  "qwen/qwen3.6-plus",
+  "x-ai/grok-4.3"
+];
+var CLOUD_GPU_SPECS = [
+  { venue: "azure", sku: "Standard_NC24ads_A100_v4", product: "a100", units: 1 },
+  { venue: "azure", sku: "Standard_NC40ads_H100_v5", product: "h100", units: 1 },
+  { venue: "aws", sku: "g5.xlarge", product: "a10g", units: 1 },
+  { venue: "aws", sku: "g6.xlarge", product: "l4", units: 1 },
+  { venue: "aws", sku: "p4d.24xlarge", product: "a100", units: 8 },
+  { venue: "aws", sku: "p5.48xlarge", product: "h100", units: 8 }
+];
+var CLOUD_CPU_SPECS = [
+  { venue: "aws", sku: "m7i.xlarge", product: "general_x86", units: 4 },
+  { venue: "azure", sku: "Standard_D4s_v5", product: "general_x86", units: 4 },
+  { venue: "aws", sku: "c7i.xlarge", product: "compute_x86", units: 4 },
+  { venue: "aws", sku: "r7i.xlarge", product: "memory_x86", units: 4 },
+  { venue: "aws", sku: "m7g.xlarge", product: "general_arm", units: 4 }
+];
+var AZURE_REGIONS = ["eastus", "eastus2", "westus2", "southcentralus"];
+var AWS_US_REGIONS = ["us-east-1", "us-east-2", "us-west-1", "us-west-2"];
+function cloudQuoteKey(component, spec) {
+  return `${component}/${spec.product}/${spec.venue}-${spec.sku.toLowerCase()}`;
+}
+var PRODUCT_WEIGHTS = {
+  gpu_rental: Object.fromEntries(GPU_PRODUCTS.map((g) => [g.id, g.weight]))
+};
+
+// src/compute/types.ts
+var COMPONENT_META = [
+  { id: "gpu_rental", label: "GPU rental", unit: "$/GPU-hour", nominalWeight: 0.35, source: "Vast.ai, RunPod, Akash" },
+  { id: "cloud_gpu_spot", label: "Cloud GPU spot", unit: "$/GPU-hour", nominalWeight: 0.2, source: "AWS and Azure spot" },
+  { id: "cloud_cpu_spot", label: "Cloud CPU spot", unit: "$/vCPU-hour", nominalWeight: 0.1, source: "AWS and Azure spot" },
+  { id: "ai_inference", label: "AI inference", unit: "$/1M tokens (blended)", nominalWeight: 0.2, source: "OpenRouter model list" },
+  { id: "btc_hashprice", label: "Bitcoin hashprice", unit: "$/TH/day", nominalWeight: 0.1, source: "blockchain.info + CoinGecko" },
+  { id: "blockspace", label: "Ethereum blockspace", unit: "$/1M gas (7-day median)", nominalWeight: 0.05, source: "Ethereum JSON-RPC base fees + ETH/USD" }
+];
+var COMPONENT_IDS = COMPONENT_META.map((m) => m.id);
+var VENUE_LABELS = {
+  vast: "Vast.ai",
+  runpod: "RunPod",
+  akash: "Akash",
+  azure: "Azure",
+  aws: "AWS",
+  openrouter: "OpenRouter",
+  blockchain: "blockchain.info",
+  ethrpc: "Ethereum RPC"
+};
+function venueLabel(venue) {
+  return VENUE_LABELS[venue] ?? venue;
+}
+
+// src/compute/calc.ts
+var INDEX_BASE = 1e3;
+var MIN_OK_COMPONENTS = 4;
+var RELATIVE_MIN = 0.2;
+var RELATIVE_MAX = 5;
+var round2 = (x) => Math.round(x * 100) / 100;
+var round4 = (x) => Math.round(x * 1e4) / 1e4;
+function componentRelative(id2, kept) {
+  const byProduct = /* @__PURE__ */ new Map();
+  for (const k of kept) {
+    const list = byProduct.get(k.quote.product) ?? [];
+    list.push(k);
+    byProduct.set(k.quote.product, list);
+  }
+  const products = /* @__PURE__ */ new Map();
+  for (const [product, list] of byProduct) {
+    products.set(product, weightedGeoMean(list.map((k) => ({ value: k.relative, weight: 1 }))));
+  }
+  if (products.size === 0) return null;
+  const weights = PRODUCT_WEIGHTS[id2] ?? {};
+  const rel = weightedGeoMean([...products].map(([product, value]) => ({ value, weight: weights[product] ?? 1 })));
+  return { relative: rel, products };
+}
+function computeIndex(fetched, baseQuotes = BASE_QUOTES, baseValues = BASE_VALUES) {
+  const discarded = [];
+  const keptByComponent = /* @__PURE__ */ new Map();
+  for (const meta of COMPONENT_META) {
+    const f = fetched.find((x) => x.id === meta.id);
+    const kept = [];
+    for (const q2 of f?.quotes ?? []) {
+      const base = baseQuotes[q2.key];
+      if (!(typeof base === "number" && base > 0) || !Number.isFinite(q2.price) || q2.price <= 0) {
+        discarded.push({ key: q2.key, price: q2.price, relative: null });
+        continue;
+      }
+      const relative = q2.price / base;
+      if (relative < RELATIVE_MIN || relative > RELATIVE_MAX) {
+        discarded.push({ key: q2.key, price: q2.price, relative: round4(relative) });
+        continue;
+      }
+      kept.push({ quote: q2, relative });
     }
+    keptByComponent.set(meta.id, kept);
   }
-  /** Same best-effort contract as getCurrentEgsi — see its doc comment. */
-  async getForecast() {
-    try {
-      const res = await fetch(`${this.baseUrl}/forecast`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
+  const rels = /* @__PURE__ */ new Map();
+  for (const meta of COMPONENT_META) rels.set(meta.id, componentRelative(meta.id, keptByComponent.get(meta.id) ?? []));
+  const okMetas = COMPONENT_META.filter((m) => rels.get(m.id) !== null);
+  const nominalOk = okMetas.reduce((a, m) => a + m.nominalWeight, 0);
+  const enough = okMetas.length >= MIN_OK_COMPONENTS;
+  let level = null;
+  if (enough) {
+    let logSum = 0;
+    for (const m of okMetas) logSum += m.nominalWeight / nominalOk * Math.log(rels.get(m.id).relative);
+    level = round2(INDEX_BASE * Math.exp(logSum));
+  }
+  const components = COMPONENT_META.map((meta) => {
+    const f = fetched.find((x) => x.id === meta.id);
+    const kept = keptByComponent.get(meta.id) ?? [];
+    const rel = rels.get(meta.id) ?? null;
+    const status = rel ? "ok" : "down";
+    const effectiveWeight = enough && rel ? meta.nominalWeight / nominalOk : 0;
+    const detail = { ...f?.detail ?? {} };
+    const discardedHere = discarded.filter((d) => f?.quotes.some((q2) => q2.key === d.key));
+    if (discardedHere.length) {
+      detail.discarded = discardedHere.map((d) => d.relative === null ? `${d.key} (no base)` : `${d.key} (x${d.relative})`).join("; ");
     }
+    if (f?.errors.length && status === "ok") detail.venueErrors = f.errors.join("; ");
+    const out = {
+      id: meta.id,
+      label: meta.label,
+      unit: meta.unit,
+      source: meta.source,
+      nominalWeight: meta.nominalWeight,
+      effectiveWeight: round4(effectiveWeight),
+      value: kept.length ? median(kept.map((k) => k.quote.price)) : null,
+      baseValue: baseValues[meta.id],
+      relative: rel ? round4(rel.relative) : null,
+      contributionPoints: enough && rel ? round2((Math.pow(rel.relative, effectiveWeight) - 1) * INDEX_BASE) : null,
+      status,
+      level: rel ? round2(INDEX_BASE * rel.relative) : null,
+      sources: [...new Set(kept.map((k) => venueLabel(k.quote.venue)))],
+      quotes: { ok: kept.length, total: f?.expected.length ?? 0 }
+    };
+    if (status === "down") {
+      out.error = f?.errors.length ? f.errors.join("; ") : f ? "no usable quotes" : "missing";
+    }
+    if (Object.keys(detail).length) out.detail = detail;
+    return out;
+  });
+  return {
+    level,
+    degraded: level === null || okMetas.length < COMPONENT_META.length,
+    components,
+    gpus: gpuViews(keptByComponent.get("gpu_rental") ?? []),
+    discarded
+  };
+}
+function gpuViews(kept) {
+  return GPU_PRODUCTS.map((g) => {
+    const mine = kept.filter((k) => k.quote.product === g.id);
+    const venues = GPU_VENUES.map((v) => {
+      const q2 = mine.find((k) => k.quote.venue === v);
+      return { venue: v, price: q2 ? q2.quote.price : null, status: q2 ? "ok" : "down" };
+    });
+    const prices = mine.map((k) => k.quote.price);
+    const cheapestQuote = mine.reduce((a, k) => a === null || k.quote.price < a.quote.price ? k : a, null);
+    const lo = prices.length ? Math.min(...prices) : 0;
+    const hi = prices.length ? Math.max(...prices) : 0;
+    const rel = mine.length ? weightedGeoMean(mine.map((k) => ({ value: k.relative, weight: 1 }))) : null;
+    return {
+      id: g.id,
+      label: g.label,
+      level: rel === null ? null : round2(INDEX_BASE * rel),
+      medianPrice: prices.length ? median(prices) : null,
+      venues,
+      cheapest: cheapestQuote ? { venue: cheapestQuote.quote.venue, price: cheapestQuote.quote.price } : null,
+      spreadPct: mine.length >= 2 && lo > 0 ? round2((hi - lo) / lo * 100) : null
+    };
+  });
+}
+
+// src/compute/fetchers.ts
+function q(component, key, product, venue, price) {
+  return { key, component, product, venue, price };
+}
+var gpuKey = (product, venue) => `gpu/${product}/${venue}`;
+var VAST_URL = "https://console.vast.ai/api/v0/bundles/";
+var RUNPOD_URL = "https://api.runpod.io/graphql";
+var AKASH_URL = "https://console-api.akash.network/v1/gpu-prices";
+var MIN_VAST_OFFERS = 5;
+function vastPerGpuPrices(offers) {
+  if (!Array.isArray(offers)) return [];
+  const out = [];
+  for (const o of offers) {
+    if (!isRecord(o)) continue;
+    const dph = num(o.dph_total);
+    const n = num(o.num_gpus);
+    if (dph === null || n === null || n < 1 || dph <= 0) continue;
+    out.push(dph / n);
   }
-  async restoreHistory(scores) {
-    try {
-      const res = await fetch(`${this.baseUrl}/history/restore`, {
+  return out;
+}
+function vastTrimmedMedian(prices) {
+  return median(trim(prices, 0.1));
+}
+function runpodPrices(body) {
+  const out = /* @__PURE__ */ new Map();
+  const data = isRecord(body) ? body.data : void 0;
+  const types2 = isRecord(data) ? data.gpuTypes : void 0;
+  if (!Array.isArray(types2)) return out;
+  for (const t of types2) {
+    if (!isRecord(t) || typeof t.id !== "string") continue;
+    const secure = num(t.securePrice);
+    const community = num(t.communityPrice);
+    const price = secure !== null && secure > 0 ? secure : community;
+    if (price !== null && price > 0) out.set(t.id, price);
+  }
+  return out;
+}
+function akashPrices(body) {
+  const out = /* @__PURE__ */ new Map();
+  const models = isRecord(body) ? body.models : void 0;
+  if (!Array.isArray(models)) return out;
+  const byModel = /* @__PURE__ */ new Map();
+  for (const m of models) {
+    if (!isRecord(m) || m.vendor !== "nvidia" || typeof m.model !== "string") continue;
+    const avail = isRecord(m.availability) ? num(m.availability.available) : null;
+    const price = isRecord(m.price) ? num(m.price.weightedAverage) : null;
+    if (avail === null || avail <= 0 || price === null || price <= 0) continue;
+    const list = byModel.get(m.model) ?? [];
+    list.push(price);
+    byModel.set(m.model, list);
+  }
+  for (const [model, prices] of byModel) out.set(model, median(prices));
+  return out;
+}
+async function fetchGpuRental(fetchImpl) {
+  const expected = GPU_PRODUCTS.flatMap(
+    (g) => GPU_VENUES.map((v) => ({ key: gpuKey(g.id, v), product: g.id, venue: v }))
+  );
+  const quotes = [];
+  const errors = [];
+  const detail = {};
+  const vast = async () => {
+    const results = await Promise.allSettled(
+      GPU_PRODUCTS.map(async (g) => {
+        const body = await fetchJson(fetchImpl, VAST_URL, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            limit: 100,
+            type: "on-demand",
+            verified: { eq: true },
+            rentable: { eq: true },
+            num_gpus: { gte: 1 },
+            gpu_name: { eq: g.vastName }
+          })
+        });
+        return vastPerGpuPrices(isRecord(body) ? body.offers : void 0);
+      })
+    );
+    results.forEach((r, i) => {
+      const g = GPU_PRODUCTS[i];
+      if (!g) return;
+      if (r.status === "rejected") {
+        errors.push(`vast ${g.id}: ${errMsg(r.reason)}`);
+        return;
+      }
+      detail[`vast ${g.id} offers`] = r.value.length;
+      if (r.value.length < MIN_VAST_OFFERS) return;
+      quotes.push(q("gpu_rental", gpuKey(g.id, "vast"), g.id, "vast", vastTrimmedMedian(r.value)));
+    });
+  };
+  const runpod = async () => {
+    const prices = runpodPrices(
+      await fetchJson(fetchImpl, RUNPOD_URL, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scores })
-      });
-      if (!res.ok) return null;
-      const body = await res.json();
-      return body.restored ?? null;
-    } catch {
-      return null;
+        body: JSON.stringify({ query: "{ gpuTypes { id displayName securePrice communityPrice } }" })
+      })
+    );
+    for (const g of GPU_PRODUCTS) {
+      const p = prices.get(g.runpodId);
+      if (p !== void 0) quotes.push(q("gpu_rental", gpuKey(g.id, "runpod"), g.id, "runpod", p));
+    }
+  };
+  const akash = async () => {
+    const prices = akashPrices(await fetchJson(fetchImpl, AKASH_URL));
+    for (const g of GPU_PRODUCTS) {
+      const p = prices.get(g.akashModel);
+      if (p !== void 0) quotes.push(q("gpu_rental", gpuKey(g.id, "akash"), g.id, "akash", p));
+    }
+  };
+  const settled = await Promise.allSettled([vast(), runpod(), akash()]);
+  settled.forEach((s, i) => {
+    if (s.status === "rejected") errors.push(`${GPU_VENUES[i]}: ${errMsg(s.reason)}`);
+  });
+  quotes.sort((a, b2) => a.key.localeCompare(b2.key));
+  return { id: "gpu_rental", quotes, expected, errors, detail };
+}
+var AWS_SPOT_URL = "https://website.spot.ec2.aws.a2z.com/spot.js";
+var AWS_TIMEOUT_MS = 3e4;
+function parseAwsSpot(text, wanted) {
+  const start = text.indexOf("(");
+  const end = text.lastIndexOf(")");
+  if (start < 0 || end <= start) throw new Error("AWS spot.js: not JSONP");
+  const parsed = JSON.parse(text.slice(start + 1, end));
+  const config2 = isRecord(parsed) ? parsed.config : void 0;
+  const regions = isRecord(config2) ? config2.regions : void 0;
+  if (!Array.isArray(regions)) throw new Error("AWS spot.js: no regions");
+  const perSize = /* @__PURE__ */ new Map();
+  for (const r of regions) {
+    if (!isRecord(r) || typeof r.region !== "string" || !AWS_US_REGIONS.includes(r.region)) continue;
+    if (!Array.isArray(r.instanceTypes)) continue;
+    for (const t of r.instanceTypes) {
+      if (!isRecord(t) || !Array.isArray(t.sizes)) continue;
+      for (const s of t.sizes) {
+        if (!isRecord(s) || typeof s.size !== "string" || !wanted.includes(s.size)) continue;
+        const cols = Array.isArray(s.valueColumns) ? s.valueColumns : [];
+        const linux = cols.find((c) => isRecord(c) && c.name === "linux");
+        const usd = isRecord(linux) && isRecord(linux.prices) ? num(linux.prices.USD) : null;
+        if (usd === null || usd <= 0) continue;
+        const list = perSize.get(s.size) ?? [];
+        list.push(usd);
+        perSize.set(s.size, list);
+      }
     }
   }
-  /** Unlike the two reads above, this throws on failure — POST /cycle
-   * does real ingestion work server-side and a caller (the hedge-signal
-   * bridge route) needs to know if it didn't actually happen, not
-   * silently proceed as if it had. */
-  async runCycle(input) {
-    const body = input ? {
-      thetanuts_atm_iv: input.thetanutsAtmIv,
-      thetanuts_skew_25delta: input.thetanutsSkew25Delta
-    } : {};
-    let res;
+  const out = /* @__PURE__ */ new Map();
+  for (const [size2, prices] of perSize) out.set(size2, median(prices));
+  return out;
+}
+function createAwsSpotLoader(fetchImpl) {
+  let text = null;
+  return async (wanted) => {
+    text ??= fetchText(fetchImpl, AWS_SPOT_URL, void 0, AWS_TIMEOUT_MS);
     try {
-      res = await fetch(`${this.baseUrl}/cycle`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body)
-      });
-    } catch (err) {
-      throw new AiServiceError(`AI service unreachable at ${this.baseUrl}: ${err.message}`);
+      return parseAwsSpot(await text, wanted);
+    } catch (e) {
+      text = null;
+      throw e;
     }
-    if (!res.ok) {
-      throw new AiServiceError(`AI service POST /cycle failed with status ${res.status}`, res.status);
-    }
-    return await res.json();
+  };
+}
+var AZURE_URL = "https://prices.azure.com/api/retail/prices";
+var AZURE_MAX_PAGES = 4;
+function azureSpotPrices(items) {
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const it of items) {
+    if (!isRecord(it)) continue;
+    const sku = typeof it.skuName === "string" ? it.skuName : "";
+    const product = typeof it.productName === "string" ? it.productName : "";
+    const price = num(it.retailPrice);
+    if (!sku.includes("Spot") || product.includes("Windows") || price === null || price <= 0) continue;
+    out.push(price);
   }
-};
+  return out;
+}
+async function azureRegionSkuPrice(fetchImpl, region, sku) {
+  const filter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and armRegionName eq '${region}' and armSkuName eq '${sku}'`;
+  let url = `${AZURE_URL}?$filter=${encodeURIComponent(filter)}`;
+  const prices = [];
+  for (let page = 0; page < AZURE_MAX_PAGES && url; page++) {
+    const body = await fetchJson(fetchImpl, url);
+    if (!isRecord(body)) break;
+    prices.push(...azureSpotPrices(body.Items));
+    url = typeof body.NextPageLink === "string" && body.NextPageLink ? body.NextPageLink : null;
+  }
+  return prices.length ? median(prices) : null;
+}
+async function azureSkuPrice(fetchImpl, sku) {
+  const settled = await Promise.allSettled(AZURE_REGIONS.map((r) => azureRegionSkuPrice(fetchImpl, r, sku)));
+  const prices = [];
+  let firstError = null;
+  for (const s of settled) {
+    if (s.status === "fulfilled" && s.value !== null) prices.push(s.value);
+    else if (s.status === "rejected") firstError ??= s.reason;
+  }
+  if (prices.length) return median(prices);
+  if (firstError !== null) throw firstError instanceof Error ? firstError : new Error(String(firstError));
+  return null;
+}
+async function fetchCloud(id2, specs, fetchImpl, aws) {
+  const kind = id2 === "cloud_gpu_spot" ? "cloud_gpu" : "cloud_cpu";
+  const expected = specs.map((s) => ({ key: cloudQuoteKey(kind, s), product: s.product, venue: s.venue }));
+  const quotes = [];
+  const errors = [];
+  const detail = {};
+  const awsSpecs = specs.filter((s) => s.venue === "aws");
+  const awsTask = async () => {
+    if (awsSpecs.length === 0) return;
+    const prices = await aws(awsSpecs.map((s) => s.sku));
+    for (const s of awsSpecs) {
+      const p = prices.get(s.sku);
+      if (p !== void 0) quotes.push(q(id2, cloudQuoteKey(kind, s), s.product, "aws", p / s.units));
+    }
+  };
+  const azureTask = async (spec) => {
+    const p = await azureSkuPrice(fetchImpl, spec.sku);
+    if (p !== null) quotes.push(q(id2, cloudQuoteKey(kind, spec), spec.product, "azure", p / spec.units));
+  };
+  const tasks = [["aws", awsTask()]];
+  for (const s of specs.filter((x) => x.venue === "azure")) tasks.push([`azure ${s.sku}`, azureTask(s)]);
+  const settled = await Promise.allSettled(tasks.map(([, p]) => p));
+  settled.forEach((s, i) => {
+    if (s.status === "rejected") errors.push(`${tasks[i]?.[0]}: ${errMsg(s.reason)}`);
+  });
+  quotes.sort((a, b2) => a.key.localeCompare(b2.key));
+  return { id: id2, quotes, expected, errors, detail };
+}
+function fetchCloudGpuSpot(fetchImpl, aws = createAwsSpotLoader(fetchImpl)) {
+  return fetchCloud("cloud_gpu_spot", CLOUD_GPU_SPECS, fetchImpl, aws);
+}
+function fetchCloudCpuSpot(fetchImpl, aws = createAwsSpotLoader(fetchImpl)) {
+  return fetchCloud("cloud_cpu_spot", CLOUD_CPU_SPECS, fetchImpl, aws);
+}
+var OPENROUTER_URL = "https://openrouter.ai/api/v1/models";
+var MIN_MODELS = 4;
+function blendedPerMillion(prompt, completion) {
+  return (3 * prompt + completion) / 4 * 1e6;
+}
+function openRouterBlended(data, basket) {
+  const out = {};
+  if (!Array.isArray(data)) return out;
+  for (const m of data) {
+    if (!isRecord(m) || typeof m.id !== "string" || !basket.includes(m.id) || !isRecord(m.pricing)) continue;
+    const p = num(m.pricing.prompt);
+    const c = num(m.pricing.completion);
+    if (p === null || c === null) continue;
+    const b2 = blendedPerMillion(p, c);
+    if (b2 > 0) out[m.id] = b2;
+  }
+  return out;
+}
+var aiKey = (modelId) => `ai/${modelId}`;
+async function fetchAiInference(fetchImpl, basket = MODEL_BASKET) {
+  const expected = basket.map((id2) => ({ key: aiKey(id2), product: id2, venue: "openrouter" }));
+  try {
+    const body = await fetchJson(fetchImpl, OPENROUTER_URL);
+    const blended = openRouterBlended(isRecord(body) ? body.data : void 0, basket);
+    const ids = Object.keys(blended);
+    if (ids.length < MIN_MODELS) {
+      return { id: "ai_inference", quotes: [], expected, errors: [`only ${ids.length}/${basket.length} basket models present`] };
+    }
+    return {
+      id: "ai_inference",
+      quotes: ids.map((id2) => q("ai_inference", aiKey(id2), id2, "openrouter", blended[id2])),
+      expected,
+      errors: [],
+      detail: { modelsPresent: ids.length, modelsTotal: basket.length }
+    };
+  } catch (e) {
+    return { id: "ai_inference", quotes: [], expected, errors: [errMsg(e)] };
+  }
+}
+var BLOCKCHAIN_STATS_URL = "https://api.blockchain.info/stats";
+var COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
+var BTC_KEY = "btc/hashprice";
+function hashprice(btcUsd, hashrateTH) {
+  return 3.125 * 144 * btcUsd / hashrateTH;
+}
+async function fetchBtcHashprice(fetchImpl) {
+  const expected = [{ key: BTC_KEY, product: "hashprice", venue: "blockchain" }];
+  try {
+    const stats = await fetchJson(fetchImpl, BLOCKCHAIN_STATS_URL);
+    const ghs = isRecord(stats) ? num(stats.hash_rate) : null;
+    if (ghs === null || ghs <= 0) throw new Error("blockchain.info: missing hash_rate");
+    const hashrateTH = ghs / 1e3;
+    let btcUsd = null;
+    let priceSource = "coingecko";
+    try {
+      const cg = await fetchJson(fetchImpl, COINGECKO_URL);
+      const btc = isRecord(cg) ? cg.bitcoin : void 0;
+      btcUsd = isRecord(btc) ? num(btc.usd) : null;
+    } catch {
+      btcUsd = null;
+    }
+    if (btcUsd === null || btcUsd <= 0) {
+      btcUsd = isRecord(stats) ? num(stats.market_price_usd) : null;
+      priceSource = "blockchain.info";
+    }
+    if (btcUsd === null || btcUsd <= 0) throw new Error("no BTC/USD price available");
+    return {
+      id: "btc_hashprice",
+      quotes: [q("btc_hashprice", BTC_KEY, "hashprice", "blockchain", hashprice(btcUsd, hashrateTH))],
+      expected,
+      errors: [],
+      detail: { btcUsd, hashrateTH: Number(hashrateTH.toFixed(0)), priceSource }
+    };
+  } catch (e) {
+    return { id: "btc_hashprice", quotes: [], expected, errors: [errMsg(e)] };
+  }
+}
+var BLOCKSPACE_KEY = "eth/blockspace";
+async function fetchBlockspace(source) {
+  const expected = [{ key: BLOCKSPACE_KEY, product: "basefee", venue: "ethrpc" }];
+  try {
+    const r = await source();
+    return {
+      id: "blockspace",
+      quotes: [q("blockspace", BLOCKSPACE_KEY, "basefee", "ethrpc", r.value)],
+      expected,
+      errors: [],
+      detail: {
+        medianGwei: Number(r.medianGwei.toFixed(4)),
+        ethUsd: Number(r.ethUsd.toFixed(2)),
+        ethUsdSource: r.ethUsdSource,
+        samples: r.samples
+      }
+    };
+  } catch (e) {
+    return { id: "blockspace", quotes: [], expected, errors: [errMsg(e)] };
+  }
+}
+async function fetchAllComponents(opts) {
+  const aws = createAwsSpotLoader(opts.fetchImpl);
+  return Promise.all([
+    fetchGpuRental(opts.fetchImpl),
+    fetchCloudGpuSpot(opts.fetchImpl, aws),
+    fetchCloudCpuSpot(opts.fetchImpl, aws),
+    fetchAiInference(opts.fetchImpl),
+    fetchBtcHashprice(opts.fetchImpl),
+    fetchBlockspace(opts.blockspace)
+  ]);
+}
+
+// src/compute/service.ts
+var METHODOLOGY_VERSION = "2.0";
+var CACHE_TTL_MS = 6e4;
+function createComputeService(opts) {
+  const now = opts.now ?? (() => Date.now());
+  const ttl = opts.ttlMs ?? CACHE_TTL_MS;
+  const blockspace = opts.blockspace ?? createBlockspaceSource({ fetchImpl: opts.fetchImpl, now, ...opts.ethRpcUrl ? { rpcUrl: opts.ethRpcUrl } : {} });
+  let cached = null;
+  let inflight = null;
+  async function compute() {
+    const fetched = await fetchAllComponents({ fetchImpl: opts.fetchImpl, blockspace });
+    const calc = computeIndex(fetched, opts.baseQuotes ?? BASE_QUOTES, opts.baseValues ?? BASE_VALUES);
+    return {
+      index: {
+        id: "CCI",
+        name: "Congest Compute Index",
+        level: calc.level,
+        base: INDEX_BASE,
+        baseDate: BASE_DATE,
+        asOf: new Date(now()).toISOString(),
+        degraded: calc.degraded,
+        methodologyVersion: METHODOLOGY_VERSION
+      },
+      components: calc.components,
+      gpus: calc.gpus
+    };
+  }
+  return async () => {
+    if (cached && now() - cached.at < ttl) return cached.value;
+    if (inflight) return inflight;
+    inflight = compute().then((value) => {
+      cached = { at: now(), value };
+      return value;
+    }).finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
+}
 
 // src/config.ts
 function readEnv2(name) {
@@ -48691,9 +49396,6 @@ function readEnvInt(name, fallback) {
 function loadGatewayConfig() {
   return {
     port: readEnvInt("GASX_API_PORT", 3e3),
-    // On Vercel the AI service is the Python function at /api/ai on the
-    // same deployment (api/ai.py).
-    aiServiceUrl: readEnv2("GASX_API_AI_SERVICE_URL") || (readEnv2("VERCEL_URL") ? `https://${readEnv2("VERCEL_URL")}/api/ai` : "http://localhost:8000"),
     databaseUrl: readEnv2("GASX_API_DATABASE_URL") || void 0,
     near: loadConfigFromEnv(),
     riskPolicy: {
@@ -48708,9 +49410,7 @@ function loadGatewayConfig() {
       // deliberate tradeoff is frictionless testnet trading over
       // guarding against unfavourable pricing. Set a positive value
       // (e.g. 100 = 1%) to re-enable it.
-      maxSlippageBps: readEnvInt("GASX_API_MAX_SLIPPAGE_BPS", 0),
-      minModelConfidence: readEnvInt("GASX_API_MIN_MODEL_CONFIDENCE_PCT", 70) / 100,
-      maxHedgeNotional: readEnvInt("GASX_API_MAX_HEDGE_NOTIONAL", 1e3)
+      maxSlippageBps: readEnvInt("GASX_API_MAX_SLIPPAGE_BPS", 0)
     },
     groq: {
       apiKey: readEnv2("GASX_API_GROQ_API_KEY") || void 0,
@@ -50858,22 +51558,6 @@ function clampInterval(intervalSeconds) {
   if (!Number.isFinite(intervalSeconds)) return 1;
   return Math.max(1, Math.trunc(intervalSeconds));
 }
-function mapSnapshotRow(r) {
-  return {
-    market: String(r.market),
-    score: Number(r.score),
-    blockNumber: Number(r.block_number),
-    blockTimestamp: Number(r.block_timestamp),
-    baseFee: Number(r.base_fee),
-    utilization: Number(r.utilization),
-    mempoolPressure: Number(r.mempool_pressure),
-    feeMomentum: Number(r.fee_momentum),
-    gasVolatility: Number(r.gas_volatility),
-    dexActivity: Number(r.dex_activity),
-    thetanutsIv: r.thetanuts_iv === null || r.thetanuts_iv === void 0 ? null : Number(r.thetanuts_iv),
-    thetanutsSkew: r.thetanuts_skew === null || r.thetanuts_skew === void 0 ? null : Number(r.thetanuts_skew)
-  };
-}
 function mapComputeIndexRow(r) {
   const taken = r.taken_at instanceof Date ? r.taken_at : new Date(String(r.taken_at));
   return { t: taken.toISOString(), level: Number(r.level) };
@@ -50895,29 +51579,6 @@ var PostgresDatabase = class {
   }
   sql;
   log;
-  /** Returns the row id so a forecast can be linked to it, or null if
-   * the write failed (in which case the forecast is stored unlinked
-   * rather than lost). */
-  async recordEgsiSnapshot(row) {
-    try {
-      const rows = await this.sql`
-        INSERT INTO egsi_snapshot
-          (market, score, block_number, block_timestamp, base_fee, utilization,
-           mempool_pressure, fee_momentum, gas_volatility, dex_activity,
-           thetanuts_iv, thetanuts_skew)
-        VALUES (${row.market}, ${row.score}, ${row.blockNumber}, ${row.blockTimestamp},
-                ${row.baseFee}, ${row.utilization}, ${row.mempoolPressure},
-                ${row.feeMomentum}, ${row.gasVolatility}, ${row.dexActivity},
-                ${row.thetanutsIv}, ${row.thetanutsSkew})
-        ON CONFLICT (market, block_number) DO UPDATE SET score = EXCLUDED.score
-        RETURNING id`;
-      const id2 = Number(rows[0]?.id);
-      return Number.isFinite(id2) && id2 > 0 ? id2 : null;
-    } catch (err) {
-      this.log.error(`failed to record EGSI snapshot: ${err.message}`);
-      return null;
-    }
-  }
   async recordComputeIndexSnapshot(input) {
     try {
       await this.sql`
@@ -50944,17 +51605,6 @@ var PostgresDatabase = class {
       return [];
     }
   }
-  async recordForecast(row, snapshotId) {
-    try {
-      await this.sql`
-        INSERT INTO forecast
-          (market, expected_egsi, confidence, p_tail_500, model_version, egsi_snapshot_id)
-        VALUES (${row.market}, ${row.expectedEgsi}, ${row.confidence}, ${row.pTail500},
-                ${row.modelVersion}, ${snapshotId})`;
-    } catch (err) {
-      this.log.error(`failed to record forecast: ${err.message}`);
-    }
-  }
   async recordPreparedOrder(row) {
     try {
       await this.sql`
@@ -50966,56 +51616,36 @@ var PostgresDatabase = class {
       this.log.error(`failed to record prepared order: ${err.message}`);
     }
   }
-  async getEgsiHistory(market, limit) {
-    const safeLimit = clampLimit(limit, 1e4);
-    const rows = await this.sql`
-      SELECT market, score, block_number, block_timestamp, base_fee, utilization,
-             mempool_pressure, fee_momentum, gas_volatility, dex_activity,
-             thetanuts_iv, thetanuts_skew
-      FROM egsi_snapshot
-      WHERE market = ${market}
-      ORDER BY block_number ASC
-      LIMIT ${safeLimit}`;
-    return rows.map(mapSnapshotRow);
-  }
   /**
-   * Buckets readings into fixed intervals and derives OHLC per bucket.
-   *
-   * Done in SQL rather than in JS because the alternative is shipping
-   * every raw reading to the gateway just to fold it — at 12s cycles a
-   * day of history is ~7,000 rows for maybe 100 candles.
-   *
-   * Open and close use Postgres window functions ordered by block_number,
-   * so "first" and "last" mean first and last *by block*, not by
-   * whichever row the engine happened to return first.
+   * Buckets CCI snapshots into fixed intervals and derives OHLC per bucket
+   * in SQL (open/close are the first/last level by `taken_at`). The query
+   * runs newest-first so LIMIT keeps the most recent candles; the result is
+   * reversed because charts read oldest-first.
    */
-  async getEgsiCandles(market, intervalSeconds, limit) {
-    const interval = clampInterval(intervalSeconds);
-    const safeLimit = clampLimit(limit, 5e3);
-    const rows = await this.sql`
-      SELECT bucket AS time,
-             MIN(score) AS low,
-             MAX(score) AS high,
-             MIN(first_score) AS open,
-             MIN(last_score)  AS close,
-             COUNT(*) AS samples
-      FROM (
-        SELECT score,
-               (block_timestamp / ${interval}::bigint) * ${interval}::bigint AS bucket,
-               FIRST_VALUE(score) OVER w AS first_score,
-               LAST_VALUE(score)  OVER w AS last_score
-        FROM egsi_snapshot
-        WHERE market = ${market}
-        WINDOW w AS (
-          PARTITION BY (block_timestamp / ${interval}::bigint)
-          ORDER BY block_number
-          ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-        )
-      ) AS bucketed
-      GROUP BY bucket
-      ORDER BY bucket DESC
-      LIMIT ${safeLimit}`;
-    return rows.map(mapCandleRow).reverse();
+  async getComputeIndexCandles(intervalSeconds, limit) {
+    try {
+      const interval = clampInterval(intervalSeconds);
+      const safeLimit = clampLimit(limit, 5e3);
+      const rows = await this.sql`
+        SELECT bucket AS time,
+               MIN(level) AS low,
+               MAX(level) AS high,
+               (ARRAY_AGG(level ORDER BY taken_at ASC))[1] AS open,
+               (ARRAY_AGG(level ORDER BY taken_at DESC))[1] AS close,
+               COUNT(*) AS samples
+        FROM (
+          SELECT level, taken_at,
+                 FLOOR(EXTRACT(EPOCH FROM taken_at) / ${interval}::bigint)::bigint * ${interval}::bigint AS bucket
+          FROM compute_index_snapshots
+        ) AS bucketed
+        GROUP BY bucket
+        ORDER BY bucket DESC
+        LIMIT ${safeLimit}`;
+      return rows.map(mapCandleRow).reverse();
+    } catch (err) {
+      this.log.error(`failed to read compute index candles: ${err.message}`);
+      return [];
+    }
   }
   async close() {
     await this.sql.end({ timeout: 5 });
@@ -51044,42 +51674,17 @@ function createDatabase(databaseUrl, log4) {
 }
 
 // src/engineLayer.ts
-function llround(x) {
-  return x < 0 ? -Math.round(-x) : Math.round(x);
-}
-function computeQuote(input, config2, netPosition = 0) {
-  if (input.confidence < config2.minConfidence) return null;
-  const fairPrice = llround(input.expectedValue * config2.priceScale);
-  const halfSpread = config2.baseHalfSpread + llround(input.volatility * config2.volatilitySpreadMultiplier);
-  const skew = netPosition * config2.inventorySkewPerUnit;
-  const bid = fairPrice - halfSpread - skew;
-  const ask = fairPrice + halfSpread - skew;
-  const span = 1 - config2.minConfidence;
-  const t = span > 0 ? (input.confidence - config2.minConfidence) / span : 1;
-  const clampedT = Math.min(1, Math.max(0, t));
-  const size2 = config2.minQuoteSize + llround(clampedT * (config2.maxQuoteSize - config2.minQuoteSize));
-  return { fairPrice, bid, ask, size: size2 };
-}
 var BOOK_CACHE_MS = 4e3;
 var BOOK_ORDER_LIMIT = 200;
+var HALF_SPREAD_FRACTION = 25e-4;
+var QUOTE_SIZE = 10;
 var OnChainEngineLayer = class {
-  constructor(config2, chain2, now = Date.now) {
+  constructor(_config, chain2, now = Date.now) {
     this.chain = chain2;
     this.now = now;
-    this.pricing = {
-      // EGSI is already an integer 0-1000 index, so no rescaling.
-      priceScale: 1,
-      baseHalfSpread: 5,
-      volatilitySpreadMultiplier: 0.5,
-      minConfidence: config2.minConfidence,
-      maxQuoteSize: 100,
-      minQuoteSize: 5,
-      inventorySkewPerUnit: 0
-    };
   }
   chain;
   now;
-  pricing;
   cache = null;
   async getBook() {
     const t = this.now();
@@ -51112,27 +51717,26 @@ var OnChainEngineLayer = class {
     return book;
   }
   /**
-   * Turns the AI service's forecast into a two-sided quote. Returns null
-   * when below the confidence floor; that refusal is not overridden.
+   * Indicative quote around the live index level: fair price is the rounded
+   * level, half-spread is 0.25% of the level (at least 1 tick), size is
+   * fixed at 10. Null when the level is unavailable.
    */
-  quoteFromForecast(forecast, netPosition) {
-    if (!forecast) return null;
-    const result = computeQuote(
-      {
-        expectedValue: forecast.expected_egsi,
-        // The forecast carries no explicit volatility, so it is derived
-        // from confidence: a less confident forecast implies a wider
-        // plausible range. Crude, and stated as such.
-        volatility: (1 - forecast.confidence) * 100,
-        confidence: forecast.confidence
-      },
-      this.pricing,
-      netPosition
-    );
-    if (!result) return null;
-    return { bid: result.bid, ask: result.ask, fairPrice: result.fairPrice, size: result.size, indicative: true };
+  quoteFromIndex(level) {
+    return quoteFromIndex(level);
   }
 };
+function quoteFromIndex(level) {
+  if (level === null || !Number.isFinite(level)) return null;
+  const fairPrice = Math.round(level);
+  const halfSpread = Math.max(1, Math.round(level * HALF_SPREAD_FRACTION));
+  return {
+    bid: fairPrice - halfSpread,
+    ask: fairPrice + halfSpread,
+    fairPrice,
+    size: QUOTE_SIZE,
+    indicative: true
+  };
+}
 
 // src/server.ts
 var import_fastify = __toESM(require_fastify(), 1);
@@ -51217,34 +51821,26 @@ function validateMessages(body) {
   return validated;
 }
 async function buildSystemPrompt(deps) {
-  const [egsi, forecast] = await Promise.all([
-    deps.aiClient.getCurrentEgsi().catch(() => null),
-    deps.aiClient.getForecast().catch(() => null)
-  ]);
+  const cci = await deps.getCci().catch(() => null);
   const lines = [
-    "You are the GASX platform assistant. GASX is an AI-native Ethereum gas futures exchange: it turns Ethereum blockspace congestion into a tradeable market on NEAR.",
+    "You are Kora, the assistant for Congest, a market for the price of compute. Congest publishes the Congest Compute Index (CCI) and lists an hourly CCI future on NEAR.",
     "",
     "Key facts about the platform:",
-    "- EGSI (Ethereum Gas Stress Index) is a computed 0-1000 congestion index built from base fee, block utilization, mempool pressure, fee momentum, gas volatility, and DEX activity.",
-    "- EGSI-1H is a one-hour futures contract on that index, settled in USDC on NEAR.",
-    "- The AI forecast predicts EGSI ahead, with a confidence score and a tail probability of exceeding 500. If no trained model has beaten a naive baseline, the platform serves that baseline instead and says so -- never a number dressed up as more confident than it is.",
-    "- Hard risk limits (max order size, max slippage) are enforced in the gateway, not by the model -- the AI can request an action, but cannot bypass these limits.",
-    "- Depth shown in the order book is indicative, generated by a quoting engine from the AI forecast -- not a live indexed order book.",
+    "- The CCI is a composite index of what compute costs right now, set to 1000 at its base date. Above 1000 means compute is pricier than at the base date; below 1000 means cheaper.",
+    "- It has six pillars: GPU rental (Vast.ai, RunPod, Akash), cloud GPU spot prices (AWS, Azure), cloud CPU spot prices (AWS, Azure), AI inference prices (OpenRouter), Bitcoin hashprice, and Ethereum blockspace (a 7-day median of base fees). Each pillar carries a weight; if a pillar is down, the remaining weights are rescaled and the index is flagged as degraded.",
+    "- The hourly CCI future is a one-hour contract on the index level, settled in USDC on NEAR. An oracle account publishes the CCI level on-chain; when the hour ends the contract settles at the last published level and the next hourly market is rolled in. Buyers gain if the CCI settles higher than their entry price, sellers gain if it settles lower.",
+    "- Order sizes and positions are capped by risk limits enforced in the gateway.",
+    "- The quote and depth shown in the order book are indicative; real depth comes from open orders on the NEAR contract.",
     ""
   ];
-  if (egsi) {
+  if (cci && cci.index.level !== null) {
+    const pillars = cci.components.map((c) => `${c.label}: ${c.status === "ok" && c.level !== null ? Math.round(c.level) : "down"}`).join("; ");
     lines.push(
-      `Current live reading: EGSI = ${Math.round(egsi.score)} (0-1000 scale), as of block ${egsi.block_number}.`
+      `Current live reading: CCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), as of ${cci.index.asOf}${cci.index.degraded ? ", degraded (some pillars are down)" : ""}.`,
+      `Pillar levels (1000 = base): ${pillars}.`
     );
   } else {
-    lines.push("No live EGSI reading is available right now -- say so rather than guessing a number.");
-  }
-  if (forecast) {
-    lines.push(
-      `Current AI forecast: expected EGSI ${forecast.expected_egsi.toFixed(1)}, confidence ${Math.round(forecast.confidence * 100)}%, model ${forecast.model_version}.`
-    );
-  } else {
-    lines.push("No AI forecast is available right now.");
+    lines.push("No live CCI reading is available right now -- say so rather than guessing a number.");
   }
   lines.push(
     "",
@@ -51299,566 +51895,6 @@ function registerChatRoutes(app, deps) {
 
 // src/routes/indices.ts
 var import_node_crypto = require("node:crypto");
-
-// src/compute/http.ts
-var TIMEOUT_MS = 8e3;
-async function fetchOk(fetchImpl, url, init, timeoutMs) {
-  let res;
-  try {
-    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  } catch {
-    res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).host}`);
-  return res;
-}
-async function fetchJson(fetchImpl, url, init) {
-  return (await fetchOk(fetchImpl, url, init, TIMEOUT_MS)).json();
-}
-async function fetchText(fetchImpl, url, init, timeoutMs = TIMEOUT_MS) {
-  return (await fetchOk(fetchImpl, url, init, timeoutMs)).text();
-}
-function isRecord(x) {
-  return typeof x === "object" && x !== null;
-}
-function num(x) {
-  const n = typeof x === "string" ? Number(x) : x;
-  return typeof n === "number" && Number.isFinite(n) ? n : null;
-}
-function errMsg(e) {
-  return e instanceof Error ? e.message : String(e);
-}
-
-// src/compute/stats.ts
-function median(xs) {
-  if (xs.length === 0) throw new Error("median of empty array");
-  const s = [...xs].sort((a, b2) => a - b2);
-  const mid = Math.floor(s.length / 2);
-  const lo = s[mid - 1];
-  const hi = s[mid];
-  return s.length % 2 ? hi : (lo + hi) / 2;
-}
-function trim(xs, frac) {
-  const s = [...xs].sort((a, b2) => a - b2);
-  const k = Math.floor(s.length * frac);
-  return s.slice(k, s.length - k);
-}
-function weightedGeoMean(items) {
-  const wsum = items.reduce((a, i) => a + i.weight, 0);
-  if (items.length === 0 || wsum <= 0) throw new Error("empty geometric mean");
-  return Math.exp(items.reduce((a, i) => a + i.weight / wsum * Math.log(i.value), 0));
-}
-
-// src/compute/blockspace.ts
-var DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com";
-var SAMPLE_SPACING_BLOCKS = 300;
-var SAMPLE_COUNT = 168;
-var RPC_BATCH_SIZE = 50;
-var MIN_SAMPLES = 84;
-var MEDIAN_TTL_MS = 36e5;
-var COINGECKO_ETH_URL = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd";
-var CHAINLINK_ETH_USD = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
-var CHAINLINK_LATEST_ROUND = "0x50d25bcd";
-function usdPerMillionGas(gwei, ethUsd) {
-  return gwei * 1e-3 * ethUsd;
-}
-function hexToNumber2(x) {
-  if (typeof x !== "string" || !/^0x[0-9a-fA-F]+$/.test(x)) return null;
-  const n = Number(BigInt(x));
-  return Number.isFinite(n) ? n : null;
-}
-async function rpcBatch(fetchImpl, rpcUrl, calls) {
-  const body = calls.map((c, i) => ({ jsonrpc: "2.0", id: i, method: c.method, params: c.params }));
-  const res = await fetchJson(fetchImpl, rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!Array.isArray(res)) throw new Error("JSON-RPC batch: unexpected response");
-  const out = new Array(calls.length).fill(null);
-  for (const r of res) {
-    if (!isRecord(r)) continue;
-    const id2 = num(r.id);
-    if (id2 !== null && id2 >= 0 && id2 < calls.length) out[id2] = r.result ?? null;
-  }
-  return out;
-}
-async function fetchBlockNumber(fetchImpl, rpcUrl) {
-  const [res] = await rpcBatch(fetchImpl, rpcUrl, [{ method: "eth_blockNumber", params: [] }]);
-  const n = hexToNumber2(res);
-  if (n === null) throw new Error("eth_blockNumber: bad result");
-  return n;
-}
-function sampleBlockNumbers(latest, spacing, count) {
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    const b2 = latest - i * spacing;
-    if (b2 < 0) break;
-    out.push(b2);
-  }
-  return out;
-}
-async function fetchBaseFees(fetchImpl, rpcUrl, blocks) {
-  const batches = [];
-  for (let i = 0; i < blocks.length; i += RPC_BATCH_SIZE) batches.push(blocks.slice(i, i + RPC_BATCH_SIZE));
-  const settled = await Promise.allSettled(
-    batches.map(
-      (batch) => rpcBatch(
-        fetchImpl,
-        rpcUrl,
-        batch.map((b2) => ({ method: "eth_getBlockByNumber", params: ["0x" + b2.toString(16), false] }))
-      )
-    )
-  );
-  const out = [];
-  settled.forEach((s, bi) => {
-    if (s.status !== "fulfilled") return;
-    s.value.forEach((blk, i) => {
-      if (!isRecord(blk)) return;
-      const fee = hexToNumber2(blk.baseFeePerGas);
-      const ts = hexToNumber2(blk.timestamp);
-      const block = batches[bi]?.[i];
-      if (fee === null || ts === null || block === void 0) return;
-      out.push({ block, timestamp: ts, gwei: fee / 1e9 });
-    });
-  });
-  return out.sort((a, b2) => a.block - b2.block);
-}
-async function fetchEthUsd(fetchImpl, rpcUrl) {
-  try {
-    const cg = await fetchJson(fetchImpl, COINGECKO_ETH_URL);
-    const eth = isRecord(cg) ? cg.ethereum : void 0;
-    const p = isRecord(eth) ? num(eth.usd) : null;
-    if (p !== null && p > 0) return { price: p, source: "coingecko" };
-  } catch {
-  }
-  const [res] = await rpcBatch(fetchImpl, rpcUrl, [
-    { method: "eth_call", params: [{ to: CHAINLINK_ETH_USD, data: CHAINLINK_LATEST_ROUND }, "latest"] }
-  ]);
-  if (typeof res !== "string" || !/^0x[0-9a-fA-F]+$/.test(res)) throw new Error("Chainlink ETH/USD: bad result");
-  const price = Number(BigInt(res)) / 1e8;
-  if (!(price > 0)) throw new Error("Chainlink ETH/USD: non-positive answer");
-  return { price, source: "chainlink" };
-}
-function createBlockspaceSource(opts) {
-  const rpcUrl = opts.rpcUrl ?? DEFAULT_ETH_RPC_URL;
-  const now = opts.now ?? (() => Date.now());
-  const ttl = opts.ttlMs ?? MEDIAN_TTL_MS;
-  let cached = null;
-  let inflight = null;
-  async function sampleMedian() {
-    if (cached && now() - cached.at < ttl) return cached;
-    if (inflight) return inflight;
-    inflight = (async () => {
-      const latest = await fetchBlockNumber(opts.fetchImpl, rpcUrl);
-      const fees = await fetchBaseFees(opts.fetchImpl, rpcUrl, sampleBlockNumbers(latest, SAMPLE_SPACING_BLOCKS, SAMPLE_COUNT));
-      if (fees.length < MIN_SAMPLES) throw new Error(`only ${fees.length}/${SAMPLE_COUNT} base-fee samples`);
-      const result = { medianGwei: median(fees.map((f) => f.gwei)), samples: fees.length };
-      cached = { at: now(), ...result };
-      return result;
-    })().finally(() => {
-      inflight = null;
-    });
-    return inflight;
-  }
-  return async () => {
-    const [m, eth] = await Promise.all([sampleMedian(), fetchEthUsd(opts.fetchImpl, rpcUrl)]);
-    return {
-      value: usdPerMillionGas(m.medianGwei, eth.price),
-      medianGwei: m.medianGwei,
-      ethUsd: eth.price,
-      ethUsdSource: eth.source,
-      samples: m.samples
-    };
-  };
-}
-
-// src/compute/basket.ts
-var GPU_PRODUCTS = [
-  { id: "h100", label: "NVIDIA H100", weight: 0.5, vastName: "H100 SXM", runpodId: "NVIDIA H100 80GB HBM3", akashModel: "h100" },
-  { id: "a100", label: "NVIDIA A100", weight: 0.3, vastName: "A100 SXM4", runpodId: "NVIDIA A100-SXM4-80GB", akashModel: "a100" },
-  { id: "rtx4090", label: "NVIDIA RTX 4090", weight: 0.2, vastName: "RTX 4090", runpodId: "NVIDIA GeForce RTX 4090", akashModel: "rtx4090" }
-];
-var GPU_VENUES = ["vast", "runpod", "akash"];
-var MODEL_BASKET = [
-  "openai/gpt-4o-mini",
-  "anthropic/claude-haiku-4.5",
-  "google/gemini-3.1-flash-lite",
-  "meta-llama/llama-3.3-70b-instruct",
-  "mistralai/mistral-large-2512",
-  "deepseek/deepseek-v3.2",
-  "qwen/qwen3.6-plus",
-  "x-ai/grok-4.3"
-];
-var CLOUD_GPU_SPECS = [
-  { venue: "azure", sku: "Standard_NC24ads_A100_v4", product: "a100", units: 1 },
-  { venue: "azure", sku: "Standard_NC40ads_H100_v5", product: "h100", units: 1 },
-  { venue: "aws", sku: "g5.xlarge", product: "a10g", units: 1 },
-  { venue: "aws", sku: "g6.xlarge", product: "l4", units: 1 },
-  { venue: "aws", sku: "p4d.24xlarge", product: "a100", units: 8 },
-  { venue: "aws", sku: "p5.48xlarge", product: "h100", units: 8 }
-];
-var CLOUD_CPU_SPECS = [
-  { venue: "aws", sku: "m7i.xlarge", product: "general_x86", units: 4 },
-  { venue: "azure", sku: "Standard_D4s_v5", product: "general_x86", units: 4 },
-  { venue: "aws", sku: "c7i.xlarge", product: "compute_x86", units: 4 },
-  { venue: "aws", sku: "r7i.xlarge", product: "memory_x86", units: 4 },
-  { venue: "aws", sku: "m7g.xlarge", product: "general_arm", units: 4 }
-];
-var AZURE_REGIONS = ["eastus", "eastus2", "westus2", "southcentralus"];
-var AWS_US_REGIONS = ["us-east-1", "us-east-2", "us-west-1", "us-west-2"];
-function cloudQuoteKey(component, spec) {
-  return `${component}/${spec.product}/${spec.venue}-${spec.sku.toLowerCase()}`;
-}
-var PRODUCT_WEIGHTS = {
-  gpu_rental: Object.fromEntries(GPU_PRODUCTS.map((g) => [g.id, g.weight]))
-};
-
-// src/compute/fetchers.ts
-function q(component, key, product, venue, price) {
-  return { key, component, product, venue, price };
-}
-var gpuKey = (product, venue) => `gpu/${product}/${venue}`;
-var VAST_URL = "https://console.vast.ai/api/v0/bundles/";
-var RUNPOD_URL = "https://api.runpod.io/graphql";
-var AKASH_URL = "https://console-api.akash.network/v1/gpu-prices";
-var MIN_VAST_OFFERS = 5;
-function vastPerGpuPrices(offers) {
-  if (!Array.isArray(offers)) return [];
-  const out = [];
-  for (const o of offers) {
-    if (!isRecord(o)) continue;
-    const dph = num(o.dph_total);
-    const n = num(o.num_gpus);
-    if (dph === null || n === null || n < 1 || dph <= 0) continue;
-    out.push(dph / n);
-  }
-  return out;
-}
-function vastTrimmedMedian(prices) {
-  return median(trim(prices, 0.1));
-}
-function runpodPrices(body) {
-  const out = /* @__PURE__ */ new Map();
-  const data = isRecord(body) ? body.data : void 0;
-  const types2 = isRecord(data) ? data.gpuTypes : void 0;
-  if (!Array.isArray(types2)) return out;
-  for (const t of types2) {
-    if (!isRecord(t) || typeof t.id !== "string") continue;
-    const secure = num(t.securePrice);
-    const community = num(t.communityPrice);
-    const price = secure !== null && secure > 0 ? secure : community;
-    if (price !== null && price > 0) out.set(t.id, price);
-  }
-  return out;
-}
-function akashPrices(body) {
-  const out = /* @__PURE__ */ new Map();
-  const models = isRecord(body) ? body.models : void 0;
-  if (!Array.isArray(models)) return out;
-  const byModel = /* @__PURE__ */ new Map();
-  for (const m of models) {
-    if (!isRecord(m) || m.vendor !== "nvidia" || typeof m.model !== "string") continue;
-    const avail = isRecord(m.availability) ? num(m.availability.available) : null;
-    const price = isRecord(m.price) ? num(m.price.weightedAverage) : null;
-    if (avail === null || avail <= 0 || price === null || price <= 0) continue;
-    const list = byModel.get(m.model) ?? [];
-    list.push(price);
-    byModel.set(m.model, list);
-  }
-  for (const [model, prices] of byModel) out.set(model, median(prices));
-  return out;
-}
-async function fetchGpuRental(fetchImpl) {
-  const expected = GPU_PRODUCTS.flatMap(
-    (g) => GPU_VENUES.map((v) => ({ key: gpuKey(g.id, v), product: g.id, venue: v }))
-  );
-  const quotes = [];
-  const errors = [];
-  const detail = {};
-  const vast = async () => {
-    const results = await Promise.allSettled(
-      GPU_PRODUCTS.map(async (g) => {
-        const body = await fetchJson(fetchImpl, VAST_URL, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            limit: 100,
-            type: "on-demand",
-            verified: { eq: true },
-            rentable: { eq: true },
-            num_gpus: { gte: 1 },
-            gpu_name: { eq: g.vastName }
-          })
-        });
-        return vastPerGpuPrices(isRecord(body) ? body.offers : void 0);
-      })
-    );
-    results.forEach((r, i) => {
-      const g = GPU_PRODUCTS[i];
-      if (!g) return;
-      if (r.status === "rejected") {
-        errors.push(`vast ${g.id}: ${errMsg(r.reason)}`);
-        return;
-      }
-      detail[`vast ${g.id} offers`] = r.value.length;
-      if (r.value.length < MIN_VAST_OFFERS) return;
-      quotes.push(q("gpu_rental", gpuKey(g.id, "vast"), g.id, "vast", vastTrimmedMedian(r.value)));
-    });
-  };
-  const runpod = async () => {
-    const prices = runpodPrices(
-      await fetchJson(fetchImpl, RUNPOD_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: "{ gpuTypes { id displayName securePrice communityPrice } }" })
-      })
-    );
-    for (const g of GPU_PRODUCTS) {
-      const p = prices.get(g.runpodId);
-      if (p !== void 0) quotes.push(q("gpu_rental", gpuKey(g.id, "runpod"), g.id, "runpod", p));
-    }
-  };
-  const akash = async () => {
-    const prices = akashPrices(await fetchJson(fetchImpl, AKASH_URL));
-    for (const g of GPU_PRODUCTS) {
-      const p = prices.get(g.akashModel);
-      if (p !== void 0) quotes.push(q("gpu_rental", gpuKey(g.id, "akash"), g.id, "akash", p));
-    }
-  };
-  const settled = await Promise.allSettled([vast(), runpod(), akash()]);
-  settled.forEach((s, i) => {
-    if (s.status === "rejected") errors.push(`${GPU_VENUES[i]}: ${errMsg(s.reason)}`);
-  });
-  quotes.sort((a, b2) => a.key.localeCompare(b2.key));
-  return { id: "gpu_rental", quotes, expected, errors, detail };
-}
-var AWS_SPOT_URL = "https://website.spot.ec2.aws.a2z.com/spot.js";
-var AWS_TIMEOUT_MS = 3e4;
-function parseAwsSpot(text, wanted) {
-  const start = text.indexOf("(");
-  const end = text.lastIndexOf(")");
-  if (start < 0 || end <= start) throw new Error("AWS spot.js: not JSONP");
-  const parsed = JSON.parse(text.slice(start + 1, end));
-  const config2 = isRecord(parsed) ? parsed.config : void 0;
-  const regions = isRecord(config2) ? config2.regions : void 0;
-  if (!Array.isArray(regions)) throw new Error("AWS spot.js: no regions");
-  const perSize = /* @__PURE__ */ new Map();
-  for (const r of regions) {
-    if (!isRecord(r) || typeof r.region !== "string" || !AWS_US_REGIONS.includes(r.region)) continue;
-    if (!Array.isArray(r.instanceTypes)) continue;
-    for (const t of r.instanceTypes) {
-      if (!isRecord(t) || !Array.isArray(t.sizes)) continue;
-      for (const s of t.sizes) {
-        if (!isRecord(s) || typeof s.size !== "string" || !wanted.includes(s.size)) continue;
-        const cols = Array.isArray(s.valueColumns) ? s.valueColumns : [];
-        const linux = cols.find((c) => isRecord(c) && c.name === "linux");
-        const usd = isRecord(linux) && isRecord(linux.prices) ? num(linux.prices.USD) : null;
-        if (usd === null || usd <= 0) continue;
-        const list = perSize.get(s.size) ?? [];
-        list.push(usd);
-        perSize.set(s.size, list);
-      }
-    }
-  }
-  const out = /* @__PURE__ */ new Map();
-  for (const [size2, prices] of perSize) out.set(size2, median(prices));
-  return out;
-}
-function createAwsSpotLoader(fetchImpl) {
-  let text = null;
-  return async (wanted) => {
-    text ??= fetchText(fetchImpl, AWS_SPOT_URL, void 0, AWS_TIMEOUT_MS);
-    try {
-      return parseAwsSpot(await text, wanted);
-    } catch (e) {
-      text = null;
-      throw e;
-    }
-  };
-}
-var AZURE_URL = "https://prices.azure.com/api/retail/prices";
-var AZURE_MAX_PAGES = 4;
-function azureSpotPrices(items) {
-  if (!Array.isArray(items)) return [];
-  const out = [];
-  for (const it of items) {
-    if (!isRecord(it)) continue;
-    const sku = typeof it.skuName === "string" ? it.skuName : "";
-    const product = typeof it.productName === "string" ? it.productName : "";
-    const price = num(it.retailPrice);
-    if (!sku.includes("Spot") || product.includes("Windows") || price === null || price <= 0) continue;
-    out.push(price);
-  }
-  return out;
-}
-async function azureRegionSkuPrice(fetchImpl, region, sku) {
-  const filter = `serviceName eq 'Virtual Machines' and priceType eq 'Consumption' and armRegionName eq '${region}' and armSkuName eq '${sku}'`;
-  let url = `${AZURE_URL}?$filter=${encodeURIComponent(filter)}`;
-  const prices = [];
-  for (let page = 0; page < AZURE_MAX_PAGES && url; page++) {
-    const body = await fetchJson(fetchImpl, url);
-    if (!isRecord(body)) break;
-    prices.push(...azureSpotPrices(body.Items));
-    url = typeof body.NextPageLink === "string" && body.NextPageLink ? body.NextPageLink : null;
-  }
-  return prices.length ? median(prices) : null;
-}
-async function azureSkuPrice(fetchImpl, sku) {
-  const settled = await Promise.allSettled(AZURE_REGIONS.map((r) => azureRegionSkuPrice(fetchImpl, r, sku)));
-  const prices = [];
-  let firstError = null;
-  for (const s of settled) {
-    if (s.status === "fulfilled" && s.value !== null) prices.push(s.value);
-    else if (s.status === "rejected") firstError ??= s.reason;
-  }
-  if (prices.length) return median(prices);
-  if (firstError !== null) throw firstError instanceof Error ? firstError : new Error(String(firstError));
-  return null;
-}
-async function fetchCloud(id2, specs, fetchImpl, aws) {
-  const kind = id2 === "cloud_gpu_spot" ? "cloud_gpu" : "cloud_cpu";
-  const expected = specs.map((s) => ({ key: cloudQuoteKey(kind, s), product: s.product, venue: s.venue }));
-  const quotes = [];
-  const errors = [];
-  const detail = {};
-  const awsSpecs = specs.filter((s) => s.venue === "aws");
-  const awsTask = async () => {
-    if (awsSpecs.length === 0) return;
-    const prices = await aws(awsSpecs.map((s) => s.sku));
-    for (const s of awsSpecs) {
-      const p = prices.get(s.sku);
-      if (p !== void 0) quotes.push(q(id2, cloudQuoteKey(kind, s), s.product, "aws", p / s.units));
-    }
-  };
-  const azureTask = async (spec) => {
-    const p = await azureSkuPrice(fetchImpl, spec.sku);
-    if (p !== null) quotes.push(q(id2, cloudQuoteKey(kind, spec), spec.product, "azure", p / spec.units));
-  };
-  const tasks = [["aws", awsTask()]];
-  for (const s of specs.filter((x) => x.venue === "azure")) tasks.push([`azure ${s.sku}`, azureTask(s)]);
-  const settled = await Promise.allSettled(tasks.map(([, p]) => p));
-  settled.forEach((s, i) => {
-    if (s.status === "rejected") errors.push(`${tasks[i]?.[0]}: ${errMsg(s.reason)}`);
-  });
-  quotes.sort((a, b2) => a.key.localeCompare(b2.key));
-  return { id: id2, quotes, expected, errors, detail };
-}
-function fetchCloudGpuSpot(fetchImpl, aws = createAwsSpotLoader(fetchImpl)) {
-  return fetchCloud("cloud_gpu_spot", CLOUD_GPU_SPECS, fetchImpl, aws);
-}
-function fetchCloudCpuSpot(fetchImpl, aws = createAwsSpotLoader(fetchImpl)) {
-  return fetchCloud("cloud_cpu_spot", CLOUD_CPU_SPECS, fetchImpl, aws);
-}
-var OPENROUTER_URL = "https://openrouter.ai/api/v1/models";
-var MIN_MODELS = 4;
-function blendedPerMillion(prompt, completion) {
-  return (3 * prompt + completion) / 4 * 1e6;
-}
-function openRouterBlended(data, basket) {
-  const out = {};
-  if (!Array.isArray(data)) return out;
-  for (const m of data) {
-    if (!isRecord(m) || typeof m.id !== "string" || !basket.includes(m.id) || !isRecord(m.pricing)) continue;
-    const p = num(m.pricing.prompt);
-    const c = num(m.pricing.completion);
-    if (p === null || c === null) continue;
-    const b2 = blendedPerMillion(p, c);
-    if (b2 > 0) out[m.id] = b2;
-  }
-  return out;
-}
-var aiKey = (modelId) => `ai/${modelId}`;
-async function fetchAiInference(fetchImpl, basket = MODEL_BASKET) {
-  const expected = basket.map((id2) => ({ key: aiKey(id2), product: id2, venue: "openrouter" }));
-  try {
-    const body = await fetchJson(fetchImpl, OPENROUTER_URL);
-    const blended = openRouterBlended(isRecord(body) ? body.data : void 0, basket);
-    const ids = Object.keys(blended);
-    if (ids.length < MIN_MODELS) {
-      return { id: "ai_inference", quotes: [], expected, errors: [`only ${ids.length}/${basket.length} basket models present`] };
-    }
-    return {
-      id: "ai_inference",
-      quotes: ids.map((id2) => q("ai_inference", aiKey(id2), id2, "openrouter", blended[id2])),
-      expected,
-      errors: [],
-      detail: { modelsPresent: ids.length, modelsTotal: basket.length }
-    };
-  } catch (e) {
-    return { id: "ai_inference", quotes: [], expected, errors: [errMsg(e)] };
-  }
-}
-var BLOCKCHAIN_STATS_URL = "https://api.blockchain.info/stats";
-var COINGECKO_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
-var BTC_KEY = "btc/hashprice";
-function hashprice(btcUsd, hashrateTH) {
-  return 3.125 * 144 * btcUsd / hashrateTH;
-}
-async function fetchBtcHashprice(fetchImpl) {
-  const expected = [{ key: BTC_KEY, product: "hashprice", venue: "blockchain" }];
-  try {
-    const stats = await fetchJson(fetchImpl, BLOCKCHAIN_STATS_URL);
-    const ghs = isRecord(stats) ? num(stats.hash_rate) : null;
-    if (ghs === null || ghs <= 0) throw new Error("blockchain.info: missing hash_rate");
-    const hashrateTH = ghs / 1e3;
-    let btcUsd = null;
-    let priceSource = "coingecko";
-    try {
-      const cg = await fetchJson(fetchImpl, COINGECKO_URL);
-      const btc = isRecord(cg) ? cg.bitcoin : void 0;
-      btcUsd = isRecord(btc) ? num(btc.usd) : null;
-    } catch {
-      btcUsd = null;
-    }
-    if (btcUsd === null || btcUsd <= 0) {
-      btcUsd = isRecord(stats) ? num(stats.market_price_usd) : null;
-      priceSource = "blockchain.info";
-    }
-    if (btcUsd === null || btcUsd <= 0) throw new Error("no BTC/USD price available");
-    return {
-      id: "btc_hashprice",
-      quotes: [q("btc_hashprice", BTC_KEY, "hashprice", "blockchain", hashprice(btcUsd, hashrateTH))],
-      expected,
-      errors: [],
-      detail: { btcUsd, hashrateTH: Number(hashrateTH.toFixed(0)), priceSource }
-    };
-  } catch (e) {
-    return { id: "btc_hashprice", quotes: [], expected, errors: [errMsg(e)] };
-  }
-}
-var BLOCKSPACE_KEY = "eth/blockspace";
-async function fetchBlockspace(source) {
-  const expected = [{ key: BLOCKSPACE_KEY, product: "basefee", venue: "ethrpc" }];
-  try {
-    const r = await source();
-    return {
-      id: "blockspace",
-      quotes: [q("blockspace", BLOCKSPACE_KEY, "basefee", "ethrpc", r.value)],
-      expected,
-      errors: [],
-      detail: {
-        medianGwei: Number(r.medianGwei.toFixed(4)),
-        ethUsd: Number(r.ethUsd.toFixed(2)),
-        ethUsdSource: r.ethUsdSource,
-        samples: r.samples
-      }
-    };
-  } catch (e) {
-    return { id: "blockspace", quotes: [], expected, errors: [errMsg(e)] };
-  }
-}
-async function fetchAllComponents(opts) {
-  const aws = createAwsSpotLoader(opts.fetchImpl);
-  return Promise.all([
-    fetchGpuRental(opts.fetchImpl),
-    fetchCloudGpuSpot(opts.fetchImpl, aws),
-    fetchCloudCpuSpot(opts.fetchImpl, aws),
-    fetchAiInference(opts.fetchImpl),
-    fetchBtcHashprice(opts.fetchImpl),
-    fetchBlockspace(opts.blockspace)
-  ]);
-}
 
 // src/compute/history.ts
 var BACKFILL_TTL_MS = 36e5;
@@ -51928,233 +51964,6 @@ function createBackfillSource(opts) {
   };
 }
 
-// src/compute/base.ts
-var BASE_DATE = "2026-11-11";
-var BASE_QUOTES = {
-  "ai/anthropic/claude-haiku-4.5": 2,
-  "ai/deepseek/deepseek-v3.2": 0.29,
-  "ai/google/gemini-3.1-flash-lite": 0.5625,
-  "ai/meta-llama/llama-3.3-70b-instruct": 0.71,
-  "ai/mistralai/mistral-large-2512": 0.75,
-  "ai/openai/gpt-4o-mini": 0.2625,
-  "ai/qwen/qwen3.6-plus": 0.73125,
-  "ai/x-ai/grok-4.3": 1.5625,
-  "btc/hashprice": 0.035437672,
-  "cloud_cpu/compute_x86/aws-c7i.xlarge": 0.0197375,
-  "cloud_cpu/general_arm/aws-m7g.xlarge": 0.014475,
-  "cloud_cpu/general_x86/aws-m7i.xlarge": 0.01985,
-  "cloud_cpu/general_x86/azure-standard_d4s_v5": 0.010379375,
-  "cloud_cpu/memory_x86/aws-r7i.xlarge": 0.024175,
-  "cloud_gpu/a100/aws-p4d.24xlarge": 0.775625,
-  "cloud_gpu/a100/azure-standard_nc24ads_a100_v4": 0.746354,
-  "cloud_gpu/a10g/aws-g5.xlarge": 0.4461,
-  "cloud_gpu/h100/aws-p5.48xlarge": 4.4648375,
-  "cloud_gpu/h100/azure-standard_nc40ads_h100_v5": 2.731594,
-  "cloud_gpu/l4/aws-g6.xlarge": 0.1046,
-  "eth/blockspace": 0.12317898,
-  "gpu/a100/akash": 1.67,
-  "gpu/a100/runpod": 1.79,
-  "gpu/a100/vast": 0.9237037,
-  "gpu/h100/akash": 2.73,
-  "gpu/h100/runpod": 3.99,
-  "gpu/h100/vast": 3.3551444,
-  "gpu/rtx4090/runpod": 0.89,
-  "gpu/rtx4090/vast": 0.49288889
-};
-var BASE_VALUES = {
-  gpu_rental: 1.73,
-  cloud_gpu_spot: 0.7609895,
-  cloud_cpu_spot: 0.0197375,
-  ai_inference: 0.720625,
-  btc_hashprice: 0.035437672,
-  blockspace: 0.12317898
-};
-
-// src/compute/types.ts
-var COMPONENT_META = [
-  { id: "gpu_rental", label: "GPU rental", unit: "$/GPU-hour", nominalWeight: 0.35, source: "Vast.ai, RunPod, Akash" },
-  { id: "cloud_gpu_spot", label: "Cloud GPU spot", unit: "$/GPU-hour", nominalWeight: 0.2, source: "AWS and Azure spot" },
-  { id: "cloud_cpu_spot", label: "Cloud CPU spot", unit: "$/vCPU-hour", nominalWeight: 0.1, source: "AWS and Azure spot" },
-  { id: "ai_inference", label: "AI inference", unit: "$/1M tokens (blended)", nominalWeight: 0.2, source: "OpenRouter model list" },
-  { id: "btc_hashprice", label: "Bitcoin hashprice", unit: "$/TH/day", nominalWeight: 0.1, source: "blockchain.info + CoinGecko" },
-  { id: "blockspace", label: "Ethereum blockspace", unit: "$/1M gas (7-day median)", nominalWeight: 0.05, source: "Ethereum JSON-RPC base fees + ETH/USD" }
-];
-var COMPONENT_IDS = COMPONENT_META.map((m) => m.id);
-var VENUE_LABELS = {
-  vast: "Vast.ai",
-  runpod: "RunPod",
-  akash: "Akash",
-  azure: "Azure",
-  aws: "AWS",
-  openrouter: "OpenRouter",
-  blockchain: "blockchain.info",
-  ethrpc: "Ethereum RPC"
-};
-function venueLabel(venue) {
-  return VENUE_LABELS[venue] ?? venue;
-}
-
-// src/compute/calc.ts
-var INDEX_BASE = 1e3;
-var MIN_OK_COMPONENTS = 4;
-var RELATIVE_MIN = 0.2;
-var RELATIVE_MAX = 5;
-var round2 = (x) => Math.round(x * 100) / 100;
-var round4 = (x) => Math.round(x * 1e4) / 1e4;
-function componentRelative(id2, kept) {
-  const byProduct = /* @__PURE__ */ new Map();
-  for (const k of kept) {
-    const list = byProduct.get(k.quote.product) ?? [];
-    list.push(k);
-    byProduct.set(k.quote.product, list);
-  }
-  const products = /* @__PURE__ */ new Map();
-  for (const [product, list] of byProduct) {
-    products.set(product, weightedGeoMean(list.map((k) => ({ value: k.relative, weight: 1 }))));
-  }
-  if (products.size === 0) return null;
-  const weights = PRODUCT_WEIGHTS[id2] ?? {};
-  const rel = weightedGeoMean([...products].map(([product, value]) => ({ value, weight: weights[product] ?? 1 })));
-  return { relative: rel, products };
-}
-function computeIndex(fetched, baseQuotes = BASE_QUOTES, baseValues = BASE_VALUES) {
-  const discarded = [];
-  const keptByComponent = /* @__PURE__ */ new Map();
-  for (const meta of COMPONENT_META) {
-    const f = fetched.find((x) => x.id === meta.id);
-    const kept = [];
-    for (const q2 of f?.quotes ?? []) {
-      const base = baseQuotes[q2.key];
-      if (!(typeof base === "number" && base > 0) || !Number.isFinite(q2.price) || q2.price <= 0) {
-        discarded.push({ key: q2.key, price: q2.price, relative: null });
-        continue;
-      }
-      const relative = q2.price / base;
-      if (relative < RELATIVE_MIN || relative > RELATIVE_MAX) {
-        discarded.push({ key: q2.key, price: q2.price, relative: round4(relative) });
-        continue;
-      }
-      kept.push({ quote: q2, relative });
-    }
-    keptByComponent.set(meta.id, kept);
-  }
-  const rels = /* @__PURE__ */ new Map();
-  for (const meta of COMPONENT_META) rels.set(meta.id, componentRelative(meta.id, keptByComponent.get(meta.id) ?? []));
-  const okMetas = COMPONENT_META.filter((m) => rels.get(m.id) !== null);
-  const nominalOk = okMetas.reduce((a, m) => a + m.nominalWeight, 0);
-  const enough = okMetas.length >= MIN_OK_COMPONENTS;
-  let level = null;
-  if (enough) {
-    let logSum = 0;
-    for (const m of okMetas) logSum += m.nominalWeight / nominalOk * Math.log(rels.get(m.id).relative);
-    level = round2(INDEX_BASE * Math.exp(logSum));
-  }
-  const components = COMPONENT_META.map((meta) => {
-    const f = fetched.find((x) => x.id === meta.id);
-    const kept = keptByComponent.get(meta.id) ?? [];
-    const rel = rels.get(meta.id) ?? null;
-    const status = rel ? "ok" : "down";
-    const effectiveWeight = enough && rel ? meta.nominalWeight / nominalOk : 0;
-    const detail = { ...f?.detail ?? {} };
-    const discardedHere = discarded.filter((d) => f?.quotes.some((q2) => q2.key === d.key));
-    if (discardedHere.length) {
-      detail.discarded = discardedHere.map((d) => d.relative === null ? `${d.key} (no base)` : `${d.key} (x${d.relative})`).join("; ");
-    }
-    if (f?.errors.length && status === "ok") detail.venueErrors = f.errors.join("; ");
-    const out = {
-      id: meta.id,
-      label: meta.label,
-      unit: meta.unit,
-      source: meta.source,
-      nominalWeight: meta.nominalWeight,
-      effectiveWeight: round4(effectiveWeight),
-      value: kept.length ? median(kept.map((k) => k.quote.price)) : null,
-      baseValue: baseValues[meta.id],
-      relative: rel ? round4(rel.relative) : null,
-      contributionPoints: enough && rel ? round2((Math.pow(rel.relative, effectiveWeight) - 1) * INDEX_BASE) : null,
-      status,
-      level: rel ? round2(INDEX_BASE * rel.relative) : null,
-      sources: [...new Set(kept.map((k) => venueLabel(k.quote.venue)))],
-      quotes: { ok: kept.length, total: f?.expected.length ?? 0 }
-    };
-    if (status === "down") {
-      out.error = f?.errors.length ? f.errors.join("; ") : f ? "no usable quotes" : "missing";
-    }
-    if (Object.keys(detail).length) out.detail = detail;
-    return out;
-  });
-  return {
-    level,
-    degraded: level === null || okMetas.length < COMPONENT_META.length,
-    components,
-    gpus: gpuViews(keptByComponent.get("gpu_rental") ?? []),
-    discarded
-  };
-}
-function gpuViews(kept) {
-  return GPU_PRODUCTS.map((g) => {
-    const mine = kept.filter((k) => k.quote.product === g.id);
-    const venues = GPU_VENUES.map((v) => {
-      const q2 = mine.find((k) => k.quote.venue === v);
-      return { venue: v, price: q2 ? q2.quote.price : null, status: q2 ? "ok" : "down" };
-    });
-    const prices = mine.map((k) => k.quote.price);
-    const cheapestQuote = mine.reduce((a, k) => a === null || k.quote.price < a.quote.price ? k : a, null);
-    const lo = prices.length ? Math.min(...prices) : 0;
-    const hi = prices.length ? Math.max(...prices) : 0;
-    const rel = mine.length ? weightedGeoMean(mine.map((k) => ({ value: k.relative, weight: 1 }))) : null;
-    return {
-      id: g.id,
-      label: g.label,
-      level: rel === null ? null : round2(INDEX_BASE * rel),
-      medianPrice: prices.length ? median(prices) : null,
-      venues,
-      cheapest: cheapestQuote ? { venue: cheapestQuote.quote.venue, price: cheapestQuote.quote.price } : null,
-      spreadPct: mine.length >= 2 && lo > 0 ? round2((hi - lo) / lo * 100) : null
-    };
-  });
-}
-
-// src/compute/service.ts
-var METHODOLOGY_VERSION = "2.0";
-var CACHE_TTL_MS = 6e4;
-function createComputeService(opts) {
-  const now = opts.now ?? (() => Date.now());
-  const ttl = opts.ttlMs ?? CACHE_TTL_MS;
-  const blockspace = opts.blockspace ?? createBlockspaceSource({ fetchImpl: opts.fetchImpl, now, ...opts.ethRpcUrl ? { rpcUrl: opts.ethRpcUrl } : {} });
-  let cached = null;
-  let inflight = null;
-  async function compute() {
-    const fetched = await fetchAllComponents({ fetchImpl: opts.fetchImpl, blockspace });
-    const calc = computeIndex(fetched, opts.baseQuotes ?? BASE_QUOTES, opts.baseValues ?? BASE_VALUES);
-    return {
-      index: {
-        id: "CCI",
-        name: "Congest Compute Index",
-        level: calc.level,
-        base: INDEX_BASE,
-        baseDate: BASE_DATE,
-        asOf: new Date(now()).toISOString(),
-        degraded: calc.degraded,
-        methodologyVersion: METHODOLOGY_VERSION
-      },
-      components: calc.components,
-      gpus: calc.gpus
-    };
-  }
-  return async () => {
-    if (cached && now() - cached.at < ttl) return cached.value;
-    if (inflight) return inflight;
-    inflight = compute().then((value) => {
-      cached = { at: now(), value };
-      return value;
-    }).finally(() => {
-      inflight = null;
-    });
-    return inflight;
-  };
-}
-
 // src/routes/indices.ts
 var CURRENT_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300";
 var HISTORY_CACHE_CONTROL = "public, s-maxage=900, stale-while-revalidate=300";
@@ -52175,13 +51984,7 @@ function registerIndicesRoutes(app, deps, opts = {}) {
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const ethRpcUrl = env.GASX_ETH_RPC_URL || void 0;
-  const common = {
-    fetchImpl,
-    ...opts.now ? { now: opts.now } : {},
-    ...ethRpcUrl ? { ethRpcUrl } : {},
-    ...opts.baseQuotes ? { baseQuotes: opts.baseQuotes } : {}
-  };
-  const getCci = createComputeService(common);
+  const getCci = deps.getCci;
   const getBackfill = createBackfillSource({
     fetchImpl,
     ...opts.now ? { now: opts.now } : {},
@@ -52221,6 +52024,7 @@ function registerIndicesRoutes(app, deps, opts = {}) {
 }
 
 // src/routes/market.ts
+var MARKET_ID = "CCI-1H";
 function registerMarketRoutes(app, deps) {
   app.get(
     "/api/v1/candles",
@@ -52228,69 +52032,45 @@ function registerMarketRoutes(app, deps) {
       if (!deps.db) {
         return reply.status(503).send({ error: "no database configured; see database/README.md" });
       }
-      const market = request.query.market || "EGSI-1H";
       const interval = Number.parseInt(request.query.interval ?? "300", 10);
       const limit = Number.parseInt(request.query.limit ?? "200", 10);
-      const candles = await deps.db.getEgsiCandles(
-        market,
+      const candles = await deps.db.getComputeIndexCandles(
         Number.isFinite(interval) ? interval : 300,
         Number.isFinite(limit) ? limit : 200
       );
-      return { market, interval, count: candles.length, candles };
+      return { market: MARKET_ID, interval, count: candles.length, candles };
     }
   );
-  app.get(
-    "/api/v1/history",
-    async (request, reply) => {
-      if (!deps.db) {
-        return reply.status(503).send({
-          error: "no database configured; set GASX_API_DATABASE_URL (see database/README.md)"
-        });
-      }
-      const market = request.query.market || "EGSI-1H";
-      const limit = Number.parseInt(request.query.limit ?? "5000", 10);
-      const history = await deps.db.getEgsiHistory(market, Number.isFinite(limit) ? limit : 5e3);
-      return { market, count: history.length, history };
-    }
-  );
-  app.get("/api/v1/market", async () => {
+  app.get("/api/v1/market", async (request) => {
     const market = await deps.chainAdapter.getMarketState();
-    const [egsi, forecast] = await Promise.all([deps.aiClient.getCurrentEgsi(), deps.aiClient.getForecast()]);
-    if (deps.db && egsi) {
-      const snapshotId = await deps.db.recordEgsiSnapshot({
-        market: egsi.market,
-        score: egsi.score,
-        blockNumber: egsi.block_number,
-        blockTimestamp: egsi.timestamp,
-        baseFee: egsi.components.base_fee,
-        utilization: egsi.components.utilization,
-        mempoolPressure: egsi.components.mempool_pressure,
-        feeMomentum: egsi.components.fee_momentum,
-        gasVolatility: egsi.components.gas_volatility,
-        dexActivity: egsi.components.dex_activity,
-        thetanutsIv: egsi.components.thetanuts_iv,
-        thetanutsSkew: null
-      });
-      if (forecast) {
-        await deps.db.recordForecast(
-          {
-            market: forecast.market,
-            expectedEgsi: forecast.expected_egsi,
-            confidence: forecast.confidence,
-            pTail500: forecast.p_tail_500,
-            modelVersion: forecast.model_version
-          },
-          snapshotId
-        );
-      }
+    let index = null;
+    let pillars = [];
+    try {
+      const cci = await deps.getCci();
+      index = {
+        level: cci.index.level,
+        base: cci.index.base,
+        baseDate: cci.index.baseDate,
+        asOf: cci.index.asOf,
+        degraded: cci.index.degraded
+      };
+      pillars = cci.components.map((c) => ({
+        id: c.id,
+        label: c.label,
+        level: c.level,
+        effectiveWeight: c.effectiveWeight,
+        status: c.status
+      }));
+    } catch (err) {
+      request.log.warn({ message: err.message }, "compute index unavailable");
     }
     let orderbook = null;
     let quote = null;
     if (deps.engine) {
-      quote = deps.engine.quoteFromForecast(forecast, 0);
+      quote = deps.engine.quoteFromIndex(index?.level ?? null);
       orderbook = { ...await deps.engine.getBook(), indicative: true };
     }
-    return { market, egsi, forecast, orderbook, quote };
+    return { market, index, pillars, orderbook, quote };
   });
 }
 
@@ -52397,6 +52177,7 @@ function registerOrderRoutes(app, deps) {
 // src/tick-route.ts
 var import_node_crypto2 = require("node:crypto");
 var MIN_TICK_GAP_MS = 1e4;
+var MIN_POKE_GAP_MS = 15e3;
 function digest2(value) {
   return (0, import_node_crypto2.createHash)("sha256").update(value).digest();
 }
@@ -52417,37 +52198,64 @@ function registerTickRoute(app, deps) {
   const run = deps.runTick ?? runTick;
   let lastFinishedAt = null;
   let inFlight = false;
-  const handler2 = async (request, reply) => {
-    const env = deps.env ?? process.env;
-    const secret = env.CRON_SECRET;
-    if (!secret) return reply.status(503).send({ error: "cron tick is not configured" });
-    if (!bearerMatches2(request, secret)) return reply.status(401).send({ error: "unauthorized" });
-    if (inFlight || lastFinishedAt !== null && now() - lastFinishedAt < MIN_TICK_GAP_MS) {
-      return reply.status(429).send({ error: "tick ran too recently" });
-    }
-    if (deps.config.devMarket || !deps.config.contractId) {
-      return reply.status(503).send({ error: "no contract configured (dev-market mode)" });
-    }
+  const sinceLast = () => lastFinishedAt === null ? Infinity : now() - lastFinishedAt;
+  const isConfigured = (env) => !deps.config.devMarket && !!deps.config.contractId && !!env.GASX_NEAR_PUBLISHER_PRIVATE_KEY;
+  const execute = async (env) => {
     inFlight = true;
     try {
       const signer = (deps.makeSigner ?? defaultSigner)(env);
-      const report = await run({
+      return await run({
         config: deps.config,
         contractId: deps.config.contractId,
         signer,
-        aiUrl: deps.aiUrl
+        getPrice: deps.getPrice
       });
-      return reply.status(200).send(report);
-    } catch (err) {
-      request.log.error({ message: err.message }, "tick failed");
-      return reply.status(500).send({ error: "tick failed" });
     } finally {
       inFlight = false;
       lastFinishedAt = now();
     }
   };
-  app.post("/api/v1/cron/tick", handler2);
-  app.get("/api/v1/cron/tick", handler2);
+  const cronHandler = async (request, reply) => {
+    const env = deps.env ?? process.env;
+    const secret = env.CRON_SECRET;
+    if (!secret) return reply.status(503).send({ error: "cron tick is not configured" });
+    if (!bearerMatches2(request, secret)) return reply.status(401).send({ error: "unauthorized" });
+    if (inFlight || sinceLast() < MIN_TICK_GAP_MS) {
+      return reply.status(429).send({ error: "tick ran too recently" });
+    }
+    if (deps.config.devMarket || !deps.config.contractId) {
+      return reply.status(503).send({ error: "no contract configured (dev-market mode)" });
+    }
+    try {
+      return reply.status(200).send(await execute(env));
+    } catch (err) {
+      request.log.error({ message: err.message }, "tick failed");
+      return reply.status(500).send({ error: "tick failed" });
+    }
+  };
+  const pokeHandler = async (request, reply) => {
+    const env = deps.env ?? process.env;
+    if (!isConfigured(env)) return reply.status(200).send({ configured: false });
+    if (inFlight || sinceLast() < MIN_POKE_GAP_MS) return reply.status(200).send({ skipped: true });
+    try {
+      const report = await execute(env);
+      if (report.errors.length > 0) {
+        request.log.warn({ errors: report.errors }, "poke tick reported errors");
+      }
+      return reply.status(200).send({
+        published: report.published,
+        settled: report.settled,
+        rolled: report.rolled,
+        matched: report.matched.length
+      });
+    } catch (err) {
+      request.log.error({ message: err.message }, "poke tick failed");
+      return reply.status(500).send({ failed: true });
+    }
+  };
+  app.post("/api/v1/cron/tick", cronHandler);
+  app.get("/api/v1/cron/tick", cronHandler);
+  app.post("/api/v1/market/poke", pokeHandler);
 }
 
 // src/server.ts
@@ -52462,9 +52270,6 @@ function buildServer(deps) {
   if (deps.tick) registerTickRoute(app, deps.tick);
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);
-    if (error instanceof AiServiceError) {
-      return reply.status(502).send({ error: error.message });
-    }
     if (error instanceof Error && error.name === "DevMarketUnavailableError") {
       return reply.status(503).send({ error: error.message });
     }
@@ -52483,6 +52288,11 @@ function createGatewayDeps(env = process.env) {
   const config2 = loadGatewayConfig();
   const db = createDatabase(config2.databaseUrl, { error: (m) => console.error(m) });
   const chainAdapter = new NearChainAdapter(config2.near);
+  const ethRpcUrl = process.env.GASX_ETH_RPC_URL || void 0;
+  const getCci = createComputeService({
+    fetchImpl: (input, init) => fetch(input, init),
+    ...ethRpcUrl ? { ethRpcUrl } : {}
+  });
   return {
     db,
     engine: new OnChainEngineLayer(
@@ -52490,16 +52300,18 @@ function createGatewayDeps(env = process.env) {
         contractMultiplier: 10,
         marginRatioBps: 1e3,
         maxOrderQuantity: config2.riskPolicy.maxOrderContracts,
-        maxNetPosition: config2.riskPolicy.maxPositionContracts,
-        minConfidence: config2.riskPolicy.minModelConfidence
+        maxNetPosition: config2.riskPolicy.maxPositionContracts
       },
       chainAdapter
     ),
     chainAdapter,
-    aiClient: new HttpAiClient(config2.aiServiceUrl),
+    getCci,
     riskPolicy: config2.riskPolicy,
     groq: config2.groq,
-    tick: { config: config2.near, aiUrl: config2.aiServiceUrl },
+    tick: {
+      config: config2.near,
+      getPrice: async () => (await getCci()).index.level
+    },
     logger: true
   };
 }
