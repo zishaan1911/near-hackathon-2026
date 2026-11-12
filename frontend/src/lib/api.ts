@@ -34,6 +34,8 @@ export interface MarketSnapshot {
   pillars: PillarSnapshot[];
   market: {
     id: string;
+    /** The on-chain market number, parsed from an id like "gasx.testnet#4". */
+    number: number | null;
     label: string;
     expiryMs?: number;
     tickSize?: number;
@@ -46,6 +48,8 @@ export interface MarketSnapshot {
     /** Epoch ms of the last on-chain oracle update, when reported. */
     oracleUpdatedMs?: number;
     settled: boolean;
+    paused: boolean;
+    settlementPrice: number | null;
   };
   quote: {
     bid?: number;
@@ -155,6 +159,12 @@ function normaliseLevels(value: unknown): Array<{ price: number; size: number }>
   });
 }
 
+/** "gasx.testnet#4" -> 4. Null when the id carries no number. */
+export function marketNumber(id: string | null | undefined): number | null {
+  const match = /#(\d+)$/.exec(id ?? '');
+  return match ? Number(match[1]) : null;
+}
+
 export function normaliseMarket(payload: unknown): MarketSnapshot {
   const root = rec(payload);
   const indexObj = first(root, ['index']);
@@ -222,14 +232,17 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
     : [];
 
   const oracleUpdatedRaw = num(oracleObj, ['lastUpdateMs', 'last_update_ms'], Number.NaN);
+  const marketId = str(market, ['id', 'market_id', 'marketId'], 'SCI-1H');
+  const settlementRaw = num(market, ['settlementPrice', 'settlement_price'], Number.NaN);
 
   return {
     raw: root,
     index,
     pillars,
     market: {
-      id: str(market, ['id', 'market_id', 'marketId'], 'CCI-1H'),
-      label: str(market, ['underlying', 'symbol', 'name', 'label'], 'CCI-1H'),
+      id: marketId,
+      number: marketNumber(marketId),
+      label: str(market, ['underlying', 'symbol', 'name', 'label'], 'SCI-1H'),
       expiryMs,
       tickSize: num(market, ['tick_size', 'tickSize'], Number.NaN),
       contractMultiplier: num(
@@ -237,22 +250,15 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
         ['contract_multiplier', 'contractMultiplier', 'multiplier'],
         Number.NaN,
       ),
-      // Real field is marginRatioBps (basis points, e.g. 100 = 1%).
-      // margin_rate/marginRate/initial_margin never existed on the real
-      // response, so this always fell to NaN and callers silently
-      // substituted their own guessed default instead of the real ratio.
+      // marginRatioBps is in basis points (1000 = 10%).
       marginRate: num(market, ['marginRatioBps', 'margin_ratio_bps'], Number.NaN) / 10_000,
       devMode: bool(
         market,
         ['dev_mode', 'devMode', 'synthetic'],
         bool(root, ['dev_mode', 'devMarket'], false),
       ),
-      // Mirrors api/src/routes/orders.ts's own gate EXACTLY:
-      // `referencePrice = market.oracle.hasPrice ? market.oracle.price :
-      // undefined`. oracleHasPrice is what TradePage must use to decide
-      // whether it is even possible to price against a live oracle value
-      // -- freshness is a separate, additional signal for the UI banner,
-      // not part of what the backend's slippage check actually keys on.
+      // Mirrors the gateway's own gate: the oracle price is the reference
+      // whenever hasPrice is true. Freshness is a separate signal.
       oracleHasPrice: bool(oracleObj, ['hasPrice', 'has_price'], false),
       oraclePrice: num(oracleObj, ['price'], Number.NaN),
       oracleFresh:
@@ -260,6 +266,8 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
         bool(oracleObj, ['isFreshApprox', 'is_fresh_approx', 'fresh'], false),
       oracleUpdatedMs: Number.isFinite(oracleUpdatedRaw) && oracleUpdatedRaw > 0 ? oracleUpdatedRaw : undefined,
       settled: bool(market, ['settled', 'is_settled', 'isSettled'], false),
+      paused: bool(market, ['paused'], false),
+      settlementPrice: Number.isFinite(settlementRaw) ? settlementRaw : null,
     },
     quote: {
       bid: Number.isFinite(bid) ? bid : undefined,
@@ -538,29 +546,6 @@ export async function getAccount(accountId: string): Promise<AccountView> {
   };
 }
 
-export function pretty(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value === null || value === undefined) return '—';
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-export function pickText(value: unknown, keys: string[], fallback = ''): string {
-  return str(rec(value), keys, fallback);
-}
-
-export function pickNumber(value: unknown, keys: string[], fallback = Number.NaN): number {
-  return num(rec(value), keys, fallback);
-}
-
-export function pickBoolean(value: unknown, keys: string[], fallback = false): boolean {
-  return bool(rec(value), keys, fallback);
-}
-
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -577,6 +562,23 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<string> 
     throw new Error('The assistant did not return a reply.');
   }
   return reply;
+}
+
+/**
+ * Whether the assistant is configured. The gateway answers 501 before it
+ * validates the body, so an empty request is a free probe: 400 means it is on.
+ */
+export async function chatAvailable(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/v1/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    return response.status === 400 || response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export type ComputeComponentId =
@@ -627,7 +629,7 @@ export interface ComputeGpu {
 
 export interface ComputeIndexResponse {
   index: {
-    id: 'CCI';
+    id: string;
     name: string;
     level: number | null;
     base: number;

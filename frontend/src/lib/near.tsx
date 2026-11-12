@@ -13,6 +13,7 @@ import {
   setupWalletSelector,
 } from '@near-wallet-selector/core';
 import { setupModal } from '@near-wallet-selector/modal-ui';
+import '@near-wallet-selector/modal-ui/styles.css';
 import { setupHereWallet } from '@near-wallet-selector/here-wallet';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
@@ -35,7 +36,7 @@ function createSelection() {
     selector,
     modal: setupModal(selector, {
       theme: 'auto',
-      description: 'Connect a NEAR wallet to trade Congest.',
+      description: 'Connect a NEAR testnet wallet to trade on Silica.',
     }),
   }));
 }
