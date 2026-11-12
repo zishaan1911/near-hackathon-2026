@@ -121,7 +121,7 @@ export function Ask({ hideOnPhone = false }: { hideOnPhone?: boolean }) {
       <button
         ref={toggle}
         type="button"
-        className="btn btn-quiet ask-toggle"
+        className="btn btn-outline btn-sm ask-toggle"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >

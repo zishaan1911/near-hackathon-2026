@@ -60,6 +60,9 @@ export function Shell({ route, children }: { route: RouteId; children: ReactNode
           <p className="footer-links">
             <Link to={`${PATHS.index}#method`}>Methodology</Link>
             <Link to={`${PATHS.index}#credits`}>Image credits</Link>
+            <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
+              Charts by TradingView
+            </a>
           </p>
         </div>
       </footer>
