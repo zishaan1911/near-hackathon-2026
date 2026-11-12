@@ -2,4 +2,5 @@
 
 interface ImportMetaEnv {
   readonly VITE_NEAR_NETWORK?: 'testnet' | 'mainnet';
+  readonly VITE_NEAR_COLLATERAL_TOKEN?: string;
 }
