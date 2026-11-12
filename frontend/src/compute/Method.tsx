@@ -54,10 +54,10 @@ export function Method({ baseDate, version }: { baseDate?: string; version?: str
             <span className="cx-up">Long</span> if you think compute gets more expensive.{' '}
             <span className="cx-down">Short</span> if you think it gets cheaper.
           </p>
-          <button type="button" className="cx-btn cx-btn-trade" disabled>
+          <a className="cx-btn cx-btn-trade" href="/#trade">
             <b>Trade CCI</b>
-            <span>Coming to NEAR</span>
-          </button>
+            <span>Hourly futures on NEAR</span>
+          </a>
         </Reveal>
       </div>
     </section>

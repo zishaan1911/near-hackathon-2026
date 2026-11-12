@@ -11,20 +11,27 @@ export interface Candle {
   volume?: number;
 }
 
+export interface IndexSnapshot {
+  level: number | null;
+  base: number;
+  baseDate: string;
+  /** Epoch milliseconds the index was computed at, when known. */
+  asOfMs?: number;
+  degraded: boolean;
+}
+
+export interface PillarSnapshot {
+  id: string;
+  label: string;
+  level: number | null;
+  effectiveWeight: number;
+  status: 'ok' | 'down';
+}
+
 export interface MarketSnapshot {
   raw: JsonObject;
-  egsi: {
-    score: number;
-    components: Record<string, number>;
-    timestamp?: number;
-  };
-  forecast: {
-    expected: number;
-    confidence: number;
-    tailProbability: number;
-    modelVersion: string;
-    fallback: boolean;
-  };
+  index: IndexSnapshot | null;
+  pillars: PillarSnapshot[];
   market: {
     id: string;
     label: string;
@@ -36,12 +43,15 @@ export interface MarketSnapshot {
     oracleHasPrice: boolean;
     oraclePrice: number;
     oracleFresh: boolean;
+    /** Epoch ms of the last on-chain oracle update, when reported. */
+    oracleUpdatedMs?: number;
     settled: boolean;
   };
   quote: {
     bid?: number;
     ask?: number;
     mid?: number;
+    fairPrice?: number;
   };
   orderbook: {
     asks: Array<{ price: number; size: number }>;
@@ -147,31 +157,15 @@ function normaliseLevels(value: unknown): Array<{ price: number; size: number }>
 
 export function normaliseMarket(payload: unknown): MarketSnapshot {
   const root = rec(payload);
-  const egsi = rec(first(root, ['egsi', 'index', 'gas_stress']));
-  const forecast = rec(first(root, ['forecast', 'ai_forecast']));
+  const indexObj = first(root, ['index']);
   const market = rec(first(root, ['market', 'instrument']));
   const quote = rec(first(root, ['quote', 'pricing']));
   const orderbook = rec(first(root, ['orderbook', 'book', 'depth']));
   const oracleObj = rec(first(market, ['oracle']));
-  const componentsRaw = rec(first(egsi, ['components', 'drivers', 'inputs']));
-
-  const components: Record<string, number> = {};
-
-  Object.entries(componentsRaw).forEach(([key, value]) => {
-    const parsed = Number(
-      isRecord(value)
-        ? first(value, ['score', 'value', 'contribution'])
-        : value,
-    );
-
-    if (Number.isFinite(parsed)) {
-      components[key] = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
-    }
-  });
-
   const bid = num(quote, ['bid', 'best_bid'], Number.NaN);
   const ask = num(quote, ['ask', 'best_ask'], Number.NaN);
-  const rawMid = num(quote, ['mid', 'fair', 'fair_value', 'mark'], Number.NaN);
+  const rawMid = num(quote, ['mid', 'fair', 'fair_value', 'fairPrice', 'mark'], Number.NaN);
+  const fairPrice = num(quote, ['fairPrice', 'fair_price', 'fair', 'fair_value'], Number.NaN);
 
   const mid = Number.isFinite(rawMid)
     ? rawMid
@@ -195,59 +189,47 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
     }
   }
 
-  const timestampRaw = first(egsi, [
-    'timestamp',
-    'updated_at_ms',
-    'updatedAt',
-    'created_at',
-    'time',
-  ]);
-
-  let timestamp: number | undefined;
-  if (typeof timestampRaw === 'number' && Number.isFinite(timestampRaw)) {
-    timestamp = timestampRaw;
-  } else if (typeof timestampRaw === 'string') {
-    const numeric = Number(timestampRaw);
-    if (Number.isFinite(numeric)) timestamp = numeric;
-    else {
-      const parsed = Date.parse(timestampRaw);
-      if (Number.isFinite(parsed)) timestamp = parsed;
-    }
+  let index: IndexSnapshot | null = null;
+  if (isRecord(indexObj)) {
+    const levelRaw = indexObj.level;
+    const asOfRaw = indexObj.asOf;
+    const asOfParsed =
+      typeof asOfRaw === 'number' ? (asOfRaw < 10_000_000_000 ? asOfRaw * 1000 : asOfRaw)
+      : typeof asOfRaw === 'string' ? Date.parse(asOfRaw) : Number.NaN;
+    index = {
+      level: typeof levelRaw === 'number' && Number.isFinite(levelRaw) ? levelRaw : null,
+      base: num(indexObj, ['base'], 1000),
+      baseDate: str(indexObj, ['baseDate'], ''),
+      asOfMs: Number.isFinite(asOfParsed) ? asOfParsed : undefined,
+      degraded: bool(indexObj, ['degraded'], false),
+    };
   }
+
+  const pillars: PillarSnapshot[] = Array.isArray(root.pillars)
+    ? root.pillars.flatMap((item) => {
+        const p = rec(item);
+        const id = str(p, ['id']);
+        if (!id) return [];
+        const lv = p.level;
+        return [{
+          id,
+          label: str(p, ['label'], id),
+          level: typeof lv === 'number' && Number.isFinite(lv) ? lv : null,
+          effectiveWeight: num(p, ['effectiveWeight'], 0),
+          status: p.status === 'down' ? ('down' as const) : ('ok' as const),
+        }];
+      })
+    : [];
+
+  const oracleUpdatedRaw = num(oracleObj, ['lastUpdateMs', 'last_update_ms'], Number.NaN);
 
   return {
     raw: root,
-    egsi: {
-      score: num(egsi, ['score', 'value', 'egsi'], num(root, ['egsi_score', 'score'], 0)),
-      components,
-      timestamp,
-    },
-    forecast: {
-      expected: num(
-        forecast,
-        ['expected_egsi', 'expected', 'forecast', 'prediction'],
-        num(egsi, ['score'], 0),
-      ),
-      confidence: num(forecast, ['confidence', 'confidence_score'], 0),
-      tailProbability: num(
-        forecast,
-        ['p_tail_500', 'p_tail', 'probability_above_500'],
-        0,
-      ),
-      modelVersion: str(
-        forecast,
-        ['model_version', 'modelVersion', 'model'],
-        'egsi-v1',
-      ),
-      fallback: bool(
-        forecast,
-        ['fallback', 'is_fallback', 'fallback_forecast'],
-        false,
-      ),
-    },
+    index,
+    pillars,
     market: {
-      id: str(market, ['id', 'market_id', 'marketId'], 'EGSI-1H'),
-      label: str(market, ['underlying', 'symbol', 'name', 'label'], 'EGSI-1H'),
+      id: str(market, ['id', 'market_id', 'marketId'], 'CCI-1H'),
+      label: str(market, ['underlying', 'symbol', 'name', 'label'], 'CCI-1H'),
       expiryMs,
       tickSize: num(market, ['tick_size', 'tickSize'], Number.NaN),
       contractMultiplier: num(
@@ -276,12 +258,14 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
       oracleFresh:
         bool(oracleObj, ['hasPrice', 'has_price'], false) &&
         bool(oracleObj, ['isFreshApprox', 'is_fresh_approx', 'fresh'], false),
+      oracleUpdatedMs: Number.isFinite(oracleUpdatedRaw) && oracleUpdatedRaw > 0 ? oracleUpdatedRaw : undefined,
       settled: bool(market, ['settled', 'is_settled', 'isSettled'], false),
     },
     quote: {
       bid: Number.isFinite(bid) ? bid : undefined,
       ask: Number.isFinite(ask) ? ask : undefined,
       mid,
+      fairPrice: Number.isFinite(fairPrice) ? fairPrice : undefined,
     },
     orderbook: {
       asks: normaliseLevels(first(orderbook, ['asks', 'sell', 'bestAsk', 'best_ask'])),
@@ -289,6 +273,15 @@ export function normaliseMarket(payload: unknown): MarketSnapshot {
       indicative: bool(orderbook, ['indicative'], true),
     },
   };
+}
+
+/** Fire-and-forget keeper nudge. Never throws; failures are ignored. */
+export async function pokeMarket(): Promise<void> {
+  try {
+    await request('/api/v1/market/poke', { method: 'POST', body: '{}' });
+  } catch {
+    /* intentionally ignored */
+  }
 }
 
 export async function getMarket(): Promise<MarketSnapshot> {
@@ -395,11 +388,11 @@ function normaliseCandle(item: unknown): Candle | null {
   }
 
   /**
-   * Some history endpoints expose raw EGSI snapshots rather than OHLC bars.
+   * Some history endpoints expose raw index snapshots rather than OHLC bars.
    * Treat each real snapshot as a flat candle. This is still real observed
    * data; the frontend is not fabricating intermediate prices.
    */
-  const value = num(row, ['value', 'score', 'egsi', 'egsi_score'], Number.NaN);
+  const value = num(row, ['value', 'score', 'level'], Number.NaN);
 
   if (Number.isFinite(time) && Number.isFinite(value)) {
     return {
@@ -415,7 +408,7 @@ function normaliseCandle(item: unknown): Candle | null {
 }
 
 /** `intervalSeconds` is the candle bucket width the gateway aggregates
- * EGSI readings into (e.g. 60 = 1m, 3600 = 1h). Defaults to the
+ * index readings into (e.g. 60 = 1m, 3600 = 1h). Defaults to the
  * gateway's own default (300s / 5m) when omitted. */
 export async function getCandles(intervalSeconds?: number): Promise<Candle[]> {
   const query = intervalSeconds ? `?interval=${intervalSeconds}` : '';

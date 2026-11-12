@@ -6,11 +6,10 @@ describe('formatComponentValue', () => {
     expect(formatComponentValue('$/GPU-hr', 1.2345)).toBe('$1.23 /GPU-hr');
     expect(formatComponentValue('$/1M tokens', 0.5)).toBe('$0.50 /1M tokens');
     expect(formatComponentValue('$/TH/day', 0.0451234)).toBe('$0.0451 /TH/day');
-    expect(formatComponentValue('EGSI', 412.6)).toBe('413 EGSI');
   });
   it('handles null and non-finite values', () => {
     expect(formatComponentValue('$/GPU-hr', null)).toBe('n/a');
-    expect(formatComponentValue('EGSI', Number.NaN)).toBe('n/a');
+    expect(formatComponentValue('$/GPU-hr', Number.NaN)).toBe('n/a');
   });
   it('falls back to two decimals for unknown units', () => {
     expect(formatComponentValue('widgets', 3)).toBe('3.00 widgets');

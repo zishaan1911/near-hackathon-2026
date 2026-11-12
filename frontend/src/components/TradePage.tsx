@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import type { Candle, MarketSnapshot } from '../lib/api';
-import { prepareOrder } from '../lib/api';
+import { pokeMarket, prepareOrder } from '../lib/api';
 import { useNear } from '../lib/near';
 import { PriceChart, type ChartMode } from './Charts';
 import { AccountPanel } from './AccountPanel';
@@ -26,8 +26,8 @@ const TIMEFRAMES = [
  *
  * The gateway's checkOrderRisk rejects any price that is not a whole
  * integer AND a multiple of the market's tick size. The previous
- * default price came straight from quote.mid / forecast.expected --
- * both real numbers, e.g. 293.4 -- so the very first thing a trader saw
+ * default price came straight from a quote --
+ * a real number, e.g. 293.4 -- so the very first thing a trader saw
  * pre-filled in the price field was already invalid, and hitting submit
  * without touching it failed immediately. This is applied both to the
  * default price and on every edit, so a request that would be rejected
@@ -54,6 +54,8 @@ export function snapToTick(value: number, tickSize: number): number {
  * testnet deployment.
  */
 export const CONTRACT_SCALE = 100;
+/** tUSDC decimals: on-chain amounts are in 10^-6 tUSDC. */
+export const TOKEN_DECIMALS = 6;
 export const MIN_DISPLAY_QUANTITY = 1 / CONTRACT_SCALE;
 
 export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange, onTrade }: {
@@ -75,27 +77,13 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   const tickSize = Number.isFinite(market?.tickSize) ? market!.tickSize! : 1;
 
   // The best available reference price, used both as the Limit
-  // field's starting point and as Market orders' fixed price -- the
-  // freshest real number wins: a live, fresh oracle price is realer
-  // than an indicative engine quote, which is realer than the AI
-  // forecast's own prediction.
-  // Must mirror api/src/routes/orders.ts's OWN gate exactly:
-  // `referencePrice = market.oracle.hasPrice ? market.oracle.price :
-  // undefined` -- the backend's slippage check keys on hasPrice alone,
-  // NOT freshness. Gating this on oracleFresh instead (as an earlier
-  // version of this file did) meant the frontend priced Market orders,
-  // and pre-filled Limit orders, against a completely different number
-  // (quote.mid / forecast.expected / egsi.score) whenever the oracle had
-  // a price but was not flagged fresh -- which then failed the
-  // backend's MAX_SLIPPAGE check against the oracle price it actually
-  // used, on every single order. Confirmed against a live report: an
-  // order priced at the live EGSI score was rejected as "more than
-  // MAX_SLIPPAGE (100 bps) from the reference price (165)" -- 165 being
-  // the real oracle price the backend validated against, which this
-  // component was not even using.
+  // field's starting point and as Market orders' fixed price.
+  // Order: on-chain oracle price (gated on hasPrice alone, mirroring the
+  // gateway's own slippage reference), then the engine's fair price,
+  // then the raw index level.
   const bestReferencePrice = market?.oracleHasPrice && Number.isFinite(market.oraclePrice)
     ? market.oraclePrice
-    : (snapshot?.quote.mid ?? snapshot?.forecast.expected ?? snapshot?.egsi.score ?? 0);
+    : (snapshot?.quote.fairPrice ?? snapshot?.index?.level ?? 0);
 
   const [priceInput, setPriceInput] = useState<string>(() => String(snapToTick(bestReferencePrice, tickSize)));
 
@@ -116,10 +104,15 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
   const [message, setMessage] = useState('');
   const multiplier = Number.isFinite(market?.contractMultiplier) ? market!.contractMultiplier! : 1;
   const marginRate = Number.isFinite(market?.marginRate) ? market!.marginRate! : 0.2;
+  // The contract counts notional as price x on-chain quantity x multiplier,
+  // in token base units (tUSDC has 6 decimals). One displayed contract is
+  // CONTRACT_SCALE on-chain units, so in tUSDC per index point:
+  const perPoint = (multiplier * CONTRACT_SCALE) / 10 ** TOKEN_DECIMALS;
+  const perTenth = perPoint / 10;
   // Local math (notional, margin, everything shown on screen) uses the
   // fractional display quantity directly -- only the actual API
   // request converts to the scaled-up on-chain integer.
-  const notional = Math.abs(effectivePrice * displayQuantity * multiplier);
+  const notional = Math.abs(effectivePrice * displayQuantity * perPoint);
   const margin = notional * marginRate;
   const asks = snapshot?.orderbook.asks ?? [];
   const bids = snapshot?.orderbook.bids ?? [];
@@ -157,8 +150,10 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
       if (txHash) {
         onTrade({ txHash, side, quantity: displayQuantity, price: effectivePrice, time: Date.now() });
         setMessage(`Order sent on NEAR · ${txHash.slice(0, 12)}…`);
+        void pokeMarket();
       } else {
         setMessage('Order sent. Check your NEAR wallet for its status.');
+        void pokeMarket();
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Order failed');
@@ -173,7 +168,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
         <section className="card order-ticket-card">
           <div className="card-heading"><div><span className="section-kicker">NEAR FUTURES</span><h2>Place Order</h2></div></div>
           <div className="side-switch"><button className={side === 'long' ? 'long active' : ''} onClick={() => setSide('long')}>Long</button><button className={side === 'short' ? 'short active' : ''} onClick={() => setSide('short')}>Short</button></div>
-          <label className="field"><span>Contract</span><div className="field-static">{market?.label ?? 'EGSI-1H'} <small>1 hour</small></div></label>
+          <label className="field"><span>Contract</span><div className="field-static">{market?.label ?? 'CCI'} <small>1 hour</small></div></label>
           <label className="field">
             <span>Order Type</span>
             <div className="side-switch">
@@ -183,7 +178,7 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
           </label>
           {orderType === 'limit' ? (
             <label className="field">
-              <span>Limit Price <small>EGSI points · tick {tickSize}</small></span>
+              <span>Limit Price <small>index points · tick {tickSize}</small></span>
               <input
                 type="number"
                 step={tickSize}
@@ -208,13 +203,14 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
             </label>
           )}
           <label className="field"><span>Size <small>contracts · min {MIN_DISPLAY_QUANTITY}</small></span><input type="number" min={MIN_DISPLAY_QUANTITY} step={MIN_DISPLAY_QUANTITY} value={sizeInput} onChange={(e: ChangeEvent<HTMLInputElement>) => setSizeInput(e.target.value)} /></label>
-          <div className="order-summary"><div><span>Notional Value</span><b>${notional.toFixed(2)}</b></div><div><span>Est. Margin</span><b>${margin.toFixed(2)}</b></div><div><span>Collateral</span><b>tUSDC</b></div></div>
+          <div className="indicative-note">1.00 contract = {perTenth.toLocaleString(undefined, { maximumFractionDigits: 6 })} tUSDC per 0.1 index points ({perPoint.toLocaleString(undefined, { maximumFractionDigits: 6 })} tUSDC per point). One contract is {CONTRACT_SCALE} on-chain units.</div>
+          <div className="order-summary"><div><span>Notional Value</span><b>${notional.toFixed(2)}</b></div><div><span>Margin Required</span><b>${margin.toFixed(2)}</b></div><div><span>Collateral</span><b>tUSDC</b></div></div>
           <button className={`button order-button ${side === 'short' ? 'short-button' : 'button-primary'}`} disabled={!canSubmit} onClick={() => void submit()}>{!accountId ? 'Connect wallet to trade' : busy ? 'Processing…' : 'Review & Sign  ◇'}</button>
           {message && <div className={message.toLowerCase().includes('fail') || message.toLowerCase().includes('error') ? 'inline-error' : 'inline-message'}>{message}</div>}
         </section>
 
         <section className="card price-chart-card">
-          <div className="card-heading chart-heading"><div><span className="section-kicker">EGSI MARKET</span><h2>Price Chart</h2></div><div className="chart-heading-controls">
+          <div className="card-heading chart-heading"><div><span className="section-kicker">INDEX MARKET</span><h2>Price Chart</h2></div><div className="chart-heading-controls">
             <div className="timeframes">
               <button className={chartMode === 'line' ? 'active' : ''} onClick={() => setChartMode('line')}>Line</button>
               <button className={chartMode === 'candle' ? 'active' : ''} onClick={() => setChartMode('candle')}>Candle</button>
@@ -233,10 +229,10 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
           </div></div>
           <div className="main-candle-chart">{candles.length ? <PriceChart candles={candles} mode={chartMode} /> : <div className="chart-empty">Waiting for candle history…</div>}</div>
           <div className="chart-metrics">
-            <div><strong>{lastCandle ? lastCandle.close.toFixed(1) : bestReferencePrice.toFixed(1)}</strong><span>Last EGSI</span></div>
+            <div><strong>{lastCandle ? lastCandle.close.toFixed(1) : bestReferencePrice.toFixed(1)}</strong><span>Last Index</span></div>
             <div><strong className={change !== null && change < 0 ? 'negative-text' : 'positive-text'}>{change === null ? '—' : `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`}</strong><span>24h Change</span></div>
-            <div><strong>{snapshot?.forecast.expected.toFixed(1) ?? '—'}</strong><span>AI Forecast</span></div>
-            <div><strong>{snapshot ? `${Math.round(snapshot.forecast.confidence * 100)}%` : '—'}</strong><span>Confidence</span></div>
+            <div><strong>{snapshot?.index?.level != null ? snapshot.index.level.toFixed(1) : '—'}</strong><span>CCI Level</span></div>
+            <div><strong>{market?.oracleHasPrice && Number.isFinite(market.oraclePrice) ? market.oraclePrice.toFixed(1) : '—'}</strong><span>On-chain Price</span></div>
           </div>
         </section>
 
@@ -244,13 +240,13 @@ export function TradePage({ snapshot, candles, intervalSeconds, onIntervalChange
           <div className="card-heading"><div><h2>Order Book</h2><span className="section-note">Indicative</span></div></div>
           <div className="book-head"><span>Price</span><span>Size</span></div>
           <div className="book-rows asks">{bookRows.asks.length ? bookRows.asks.map((row, i) => <div key={`${row.price}-${i}`}><span>{row.price.toFixed(2)}</span><b>{row.size}</b></div>) : <div className="book-empty">No asks</div>}</div>
-          <div className="book-mid"><strong>{(snapshot?.quote.mid ?? bestReferencePrice).toFixed(2)}</strong><span>AI-derived fair level</span></div>
+          <div className="book-mid"><strong>{(snapshot?.quote.fairPrice ?? bestReferencePrice).toFixed(2)}</strong><span>Fair level</span></div>
           <div className="book-rows bids">{bookRows.bids.length ? bookRows.bids.map((row, i) => <div key={`${row.price}-${i}`}><span>{row.price.toFixed(2)}</span><b>{row.size}</b></div>) : <div className="book-empty">No bids</div>}</div>
           <div className="indicative-note">Indicative depth is generated from quoting logic, not indexed resting orders.</div>
         </section>
       </div>
 
-      <AccountPanel settled={market?.settled ?? false} />
+      <AccountPanel settled={market?.settled ?? false} currentMarketId={market?.id} />
     </div>
   );
 }

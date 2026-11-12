@@ -36,7 +36,7 @@ function resizeObserver(target: HTMLDivElement, resize: (width: number, height: 
 }
 
 /**
- * The single EGSI price chart. `mode` switches between an area/line view
+ * The single index price chart. `mode` switches between an area/line view
  * and a candlestick (with volume) view of the same candles.
  *
  * The chart is created once (recreated only when the theme changes) and the

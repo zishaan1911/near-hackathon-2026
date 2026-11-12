@@ -3,6 +3,7 @@ import './styles.css';
 import {
   getCandles,
   getMarket,
+  pokeMarket,
   type Candle,
   type MarketSnapshot,
 } from './lib/api';
@@ -15,7 +16,7 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { ComputeIndexPage } from './components/ComputeIndexPage';
 import { ChatWidget } from './components/ChatWidget';
 
-function SessionPositions({ trades }: { trades: SessionTrade[] }) {
+function SessionPositions({ trades, contract }: { trades: SessionTrade[]; contract: string }) {
   return (
     <section className="card positions-card">
       <div className="card-heading">
@@ -41,7 +42,7 @@ function SessionPositions({ trades }: { trades: SessionTrade[] }) {
             <tbody>
               {trades.map((trade) => (
                 <tr key={trade.txHash}>
-                  <td>EGSI-1H</td>
+                  <td>{contract}</td>
                   <td className={trade.side === 'long' ? 'positive-text' : 'negative-text'}>
                     {trade.side[0]!.toUpperCase() + trade.side.slice(1)}
                   </td>
@@ -72,14 +73,8 @@ function SessionPositions({ trades }: { trades: SessionTrade[] }) {
   );
 }
 
-function timestampToSeconds(timestamp: number | undefined): number | null {
-  if (!Number.isFinite(timestamp)) return null;
-  const value = timestamp!;
-  return value > 10_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
-}
-
 /**
- * Build real, session-local 1-minute OHLC candles from the live EGSI snapshots
+ * Build real, session-local 1-minute OHLC candles from the live index levels
  * the browser actually receives. This is only used when /api/v1/candles has no
  * saved history yet.
  */
@@ -87,11 +82,12 @@ function appendLiveSnapshot(
   current: Candle[],
   snapshot: MarketSnapshot,
 ): Candle[] {
-  const observedAt = timestampToSeconds(snapshot.egsi.timestamp) ?? Math.floor(Date.now() / 1000);
-  const bucket = Math.floor(observedAt / 60) * 60;
-  const score = snapshot.egsi.score;
+  const level = snapshot.index?.level;
+  if (level === null || level === undefined || !Number.isFinite(level)) return current;
 
-  if (!Number.isFinite(score)) return current;
+  const asOfMs = snapshot.index?.asOfMs;
+  const observedAt = asOfMs !== undefined ? Math.floor(asOfMs / 1000) : Math.floor(Date.now() / 1000);
+  const bucket = Math.floor(observedAt / 60) * 60;
 
   const next = [...current];
   const last = next.at(-1);
@@ -99,18 +95,12 @@ function appendLiveSnapshot(
   if (last && last.time === bucket) {
     next[next.length - 1] = {
       ...last,
-      high: Math.max(last.high, score),
-      low: Math.min(last.low, score),
-      close: score,
+      high: Math.max(last.high, level),
+      low: Math.min(last.low, level),
+      close: level,
     };
   } else if (!last || bucket > last.time) {
-    next.push({
-      time: bucket,
-      open: score,
-      high: score,
-      low: score,
-      close: score,
-    });
+    next.push({ time: bucket, open: level, high: level, low: level, close: level });
   }
 
   return next.slice(-240);
@@ -147,6 +137,8 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    // Fire-and-forget keeper nudge; never awaited, never surfaced.
+    void pokeMarket();
 
     try {
       const [marketResult, candleResult] = await Promise.allSettled([
@@ -172,7 +164,7 @@ export default function App() {
 
         if (candleResult.value.length === 0) {
           setHistoryNotice(
-            'No saved EGSI candles were returned yet. Congest is showing real session history as live snapshots arrive.',
+            'No saved index candles were returned yet. Congest is showing real session history as live snapshots arrive.',
           );
         } else {
           setHistoryNotice('');
@@ -211,6 +203,17 @@ export default function App() {
   // to one of its sections. Previously this switched WHICH page was
   // rendered (market/trade/analytics as separate views); now there
   // is only one page, so this only ever needs to reveal it and scroll.
+  // "#trade" (e.g. from the Trade CCI button on /compute) opens the app
+  // view and scrolls to the trade section.
+  useEffect(() => {
+    if (window.location.hash !== '#trade') return;
+    setView('app');
+    const timer = window.setTimeout(() => {
+      document.getElementById('section-trade')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   function goToMarkets(sectionId?: string) {
     setView('app');
     if (sectionId) {
@@ -271,7 +274,7 @@ export default function App() {
                   setSessionTrades((current) => [trade, ...current])
                 }
               />
-              <SessionPositions trades={sessionTrades} />
+              <SessionPositions trades={sessionTrades} contract={snapshot?.market.label ?? 'CCI'} />
             </div>
 
             <div id="section-analytics">
@@ -284,7 +287,7 @@ export default function App() {
           </main>
 
           <footer className="app-footer">
-            <span>© 2026 Congest · AI-native Ethereum gas futures</span>
+            <span>© 2026 Congest · Compute futures on NEAR</span>
             <span>Trading on NEAR · tUSDC (testnet) collateral</span>
             <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
               Charts by TradingView

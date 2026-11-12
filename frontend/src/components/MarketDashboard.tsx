@@ -1,91 +1,14 @@
+import { useEffect, useState } from 'react';
 import type { MarketSnapshot } from '../lib/api';
-import {
-  bandLabel,
-  formatComponent,
-  formatConfidence,
-  stressBand,
-  timeToExpiry,
-} from '../lib/egsi';
-import { EgsiGauge } from './EgsiGauge';
+import { formatAge, formatCountdown, percentVsBase } from '../lib/market';
 
-function driverLabel(key: string) {
-  return key
-    .replace(/[_-]/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function ForecastSlope({ current, expected }: { current: number; expected: number }) {
-  const width = 420;
-  const height = 120;
-  const horizontalPadding = 16;
-  const verticalPadding = 18;
-
-  const difference = expected - current;
-  const extraRange = Math.max(Math.abs(difference) * 0.4, 35);
-  const domainMin = Math.min(current, expected) - extraRange;
-  const domainMax = Math.max(current, expected) + extraRange;
-  const domainRange = Math.max(1, domainMax - domainMin);
-
-  const yFor = (value: number) =>
-    verticalPadding +
-    ((domainMax - value) / domainRange) *
-      (height - verticalPadding * 2);
-
-  const startX = horizontalPadding;
-  const endX = width - horizontalPadding;
-  const startY = yFor(current);
-  const endY = yFor(expected);
-
-  // Smooth interpolation only communicates direction between the two
-  // model values. It is not presented as extra model observations.
-  const controlOneX = width * 0.36;
-  const controlTwoX = width * 0.68;
-
-  const linePath = [
-    `M ${startX} ${startY}`,
-    `C ${controlOneX} ${startY},`,
-    `${controlTwoX} ${endY},`,
-    `${endX} ${endY}`,
-  ].join(' ');
-
-  const areaPath = `${linePath} L ${endX} ${height} L ${startX} ${height} Z`;
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#00e5a0" stopOpacity=".26" />
-          <stop offset="1" stopColor="#00e5a0" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-
-      <line
-        x1={startX}
-        y1={startY}
-        x2={endX}
-        y2={startY}
-        stroke="#243443"
-        strokeWidth="1"
-        strokeDasharray="5 6"
-      />
-
-      <path d={areaPath} fill="url(#forecastFill)" />
-      <path
-        d={linePath}
-        fill="none"
-        stroke="#00e5a0"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-
-      <circle cx={startX} cy={startY} r="4" fill="#7af2c9" />
-      <circle cx={endX} cy={endY} r="5" fill="#e6fff7" stroke="#00e5a0" strokeWidth="2" />
-    </svg>
-  );
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
 }
 
 export function MarketDashboard({
@@ -99,6 +22,8 @@ export function MarketDashboard({
   error: string;
   onTrade: () => void;
 }) {
+  const now = useNow();
+
   if (!snapshot) {
     return (
       <div className="screen-state card">
@@ -107,37 +32,27 @@ export function MarketDashboard({
     );
   }
 
-  const { egsi, forecast, market, quote } = snapshot;
-  const band = stressBand(egsi.score);
-
-  const drivers = Object.entries(egsi.components)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-
-  const expiry = market.expiryMs ? timeToExpiry(market.expiryMs) : null;
-  const price = quote.mid ?? forecast.expected;
-
-  const forecastDelta = forecast.expected - egsi.score;
-  const forecastDeltaRounded = Math.round(forecastDelta);
-
-  const forecastDirection: 'up' | 'down' | 'flat' =
-    forecastDelta > 0.5
-      ? 'up'
-      : forecastDelta < -0.5
-        ? 'down'
-        : 'flat';
-
-  const forecastDeltaLabel =
-    forecastDeltaRounded > 0
-      ? `+${forecastDeltaRounded}`
-      : `${forecastDeltaRounded}`;
-
-  const forecastDirectionLabel =
-    forecastDirection === 'up'
-      ? 'Rising'
-      : forecastDirection === 'down'
-        ? 'Cooling'
-        : 'Stable';
+  const { index, pillars, market, quote, orderbook } = snapshot;
+  const level = index?.level ?? null;
+  const base = index?.base ?? 1000;
+  const vsBase = percentVsBase(level, base);
+  const countdown = market.settled
+    ? 'Settled'
+    : market.expiryMs
+      ? (formatCountdown(market.expiryMs, now) ?? 'Awaiting settlement')
+      : '—';
+  const oracleAge = formatAge(market.oracleUpdatedMs, now);
+  const oracleLabel = !market.oracleHasPrice
+    ? 'No price yet'
+    : market.oracleFresh
+      ? 'Fresh'
+      : 'Stale';
+  const asks = orderbook.asks.slice(0, 3).reverse();
+  const bids = orderbook.bids.slice(0, 3);
+  const price = market.oracleHasPrice && Number.isFinite(market.oraclePrice)
+    ? market.oraclePrice
+    : (quote.fairPrice ?? level ?? Number.NaN);
+  const degraded = index?.degraded === true;
 
   return (
     <div className="dashboard-page">
@@ -146,100 +61,97 @@ export function MarketDashboard({
           <div className="card-heading">
             <div>
               <span className="section-kicker">LIVE INDEX</span>
-              <h2>Ethereum Gas Stress Index (EGSI)</h2>
+              <h2>Congest Compute Index (CCI)</h2>
             </div>
 
             <span className="live-badge">
-              <i /> Live
+              <i /> {degraded ? 'Degraded' : 'Live'}
             </span>
           </div>
 
-          <EgsiGauge score={egsi.score} />
+          <div className="index-gauge">
+            <div className="gauge-center">
+              <strong>{level !== null ? level.toFixed(1) : '—'}</strong>
+              <span>
+                {vsBase !== null
+                  ? `${vsBase >= 0 ? '+' : ''}${vsBase.toFixed(2)}% vs base ${base}`
+                  : `Base ${base}`}
+              </span>
+            </div>
+          </div>
+          {index?.baseDate && (
+            <div className="indicative-note">Base {base} set on {index.baseDate}.</div>
+          )}
         </section>
       </div>
 
       <div className="dashboard-bottom-grid">
         <section className="card drivers-card">
           <div className="card-heading">
-            <h2>Key Drivers</h2>
+            <h2>Pillars</h2>
           </div>
 
           <div className="driver-list">
-            {drivers.length ? (
-              drivers.map(([name, value]) => (
-                <div className="driver" key={name}>
+            {pillars.length ? (
+              pillars.map((pillar) => (
+                <div className="driver" key={pillar.id}>
                   <div>
                     <span className="driver-icon">⌁</span>
-                    <span>{driverLabel(name)}</span>
-                    <b>{formatComponent(value)}</b>
+                    <span>{pillar.label}</span>
+                    <b>
+                      {pillar.status === 'down' || pillar.level === null
+                        ? 'down'
+                        : pillar.level.toFixed(0)}{' '}
+                      · {Math.round(pillar.effectiveWeight * 100)}%
+                    </b>
                   </div>
 
                   <div className="driver-track">
-                    <span
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(2, value * 100),
-                        )}%`,
-                      }}
-                    />
+                    <span style={{ width: `${Math.min(100, Math.max(2, pillar.effectiveWeight * 100))}%` }} />
                   </div>
                 </div>
               ))
             ) : (
-              <div className="muted-empty">
-                No component breakdown returned by the AI service.
-              </div>
+              <div className="muted-empty">No pillar breakdown returned yet.</div>
             )}
           </div>
         </section>
 
-        <section className="card forecast-card">
+        <section className="card kpi-card">
           <div className="card-heading">
             <div>
-              <span className="section-kicker">AI FORECAST</span>
-              <h2>Next 1 Hour</h2>
+              <span className="section-kicker">ON-CHAIN</span>
+              <h2>Oracle &amp; Expiry</h2>
             </div>
           </div>
 
-          {/* Important values are kept outside the chart so they stay readable. */}
-          <div className="forecast-summary-row">
-            <div className="forecast-stat-card">
-              <span>Now</span>
-              <strong>{Math.round(egsi.score)}</strong>
-              <small>Live EGSI</small>
+          <div className="kpi-summary-row">
+            <div className="kpi-stat-card">
+              <span>Oracle price</span>
+              <strong>
+                {market.oracleHasPrice && Number.isFinite(market.oraclePrice)
+                  ? market.oraclePrice.toFixed(0)
+                  : '—'}
+              </strong>
+              <small>
+                {oracleLabel}
+                {oracleAge ? ` · ${oracleAge}` : ''}
+              </small>
             </div>
 
-            <div className="forecast-stat-card emphasis">
-              <span>Expected</span>
-              <strong>{Math.round(forecast.expected)}</strong>
-              <small>In 1 hour</small>
-            </div>
-
-            <div className={`forecast-delta-pill ${forecastDirection}`}>
-              <span>1H Change</span>
-              <strong>{forecastDeltaLabel}</strong>
-              <small>{forecastDirectionLabel}</small>
+            <div className="kpi-stat-card emphasis">
+              <span>Expires in</span>
+              <strong>{countdown}</strong>
+              <small>Hourly market</small>
             </div>
           </div>
 
-          <div className="forecast-visual">
-            <ForecastSlope
-              current={egsi.score}
-              expected={forecast.expected}
-            />
+          <div className="book-head"><span>Order book (indicative)</span><span>Size</span></div>
+          <div className="book-rows asks">
+            {asks.length ? asks.map((row, i) => <div key={`a${row.price}-${i}`}><span>{row.price.toFixed(2)}</span><b>{row.size}</b></div>) : <div className="book-empty">No asks</div>}
           </div>
-
-          <div className="forecast-legend">
-            <span>
-              <i className="blue-dot" />
-              Model {forecast.modelVersion}
-            </span>
-
-            <span>
-              P(EGSI &gt; 500){' '}
-              <b>{formatConfidence(forecast.tailProbability)}</b>
-            </span>
+          <div className="book-rows bids">
+            {bids.length ? bids.map((row, i) => <div key={`b${row.price}-${i}`}><span>{row.price.toFixed(2)}</span><b>{row.size}</b></div>) : <div className="book-empty">No bids</div>}
           </div>
         </section>
 
@@ -255,7 +167,7 @@ export function MarketDashboard({
             </div>
 
             <div>
-              <span>Indicative price</span>
+              <span>Reference price</span>
               <b>{Number.isFinite(price) ? price.toFixed(1) : '—'}</b>
             </div>
 
@@ -265,13 +177,13 @@ export function MarketDashboard({
             </div>
 
             <div>
-              <span>Expiry</span>
-              <b>{expiry ?? '1-hour market'}</b>
+              <span>Status</span>
+              <b className={market.settled ? undefined : 'positive-text'}>{market.settled ? 'Settled' : 'Open'}</b>
             </div>
 
             <div>
-              <span>Oracle</span>
-              <b className="positive-text">Live</b>
+              <span>Index detail</span>
+              <b><a href="/compute">Open the index</a></b>
             </div>
           </div>
 
@@ -279,26 +191,9 @@ export function MarketDashboard({
             className="button button-primary overview-action"
             onClick={onTrade}
           >
-            Trade EGSI-1H →
+            Trade {market.label} →
           </button>
         </section>
-      </div>
-
-      <div className={`market-status-banner status-${band}`}>
-        <div className="status-symbol">
-          {band === 'nominal' ? '✓' : '!'}
-        </div>
-
-        <div>
-          <b>Market is {bandLabel(band).toLowerCase()}</b>
-          <span>
-            {band === 'nominal'
-              ? 'Gas conditions are stable. Monitor for changes in network activity.'
-              : 'AI forecast and network drivers indicate elevated blockspace stress.'}
-          </span>
-        </div>
-
-        <span className="status-score">EGSI {Math.round(egsi.score)}</span>
       </div>
     </div>
   );

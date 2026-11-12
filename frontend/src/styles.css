@@ -504,9 +504,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .dashboard-top-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .dashboard-bottom-grid { display: grid; grid-template-columns: .9fr 1.15fr .85fr; gap: 14px; margin-top: 14px; }
 .gauge-card { min-height: 330px; }
-.egsi-gauge { position: relative; max-width: 330px; height: 235px; margin: 2px auto 5px; }
-.egsi-gauge svg { width: 100%; height: 100%; overflow: visible; }
-.egsi-gauge .gauge-track { stroke: var(--chart-grid); }
+.index-gauge { position: relative; max-width: 330px; height: 235px; margin: 2px auto 5px; }
+.index-gauge svg { width: 100%; height: 100%; overflow: visible; }
+.index-gauge .gauge-track { stroke: var(--chart-grid); }
 .gauge-center { position: absolute; left: 50%; top: 53%; transform: translate(-50%,-50%); text-align: center; }
 .gauge-center strong { display: block; font-size: 50px; line-height: .92; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
 .gauge-center span { display: flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; margin-top: 11px; font-size: 11px; color: var(--c-aab6bf); }
@@ -516,7 +516,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .gauge-scale { position: absolute; bottom: 15px; left: 22px; right: 22px; display: flex; justify-content: space-between; color: var(--c-596b78); font-size: 9px; }
 .chart-surface { width: 100%; height: 100%; }
 .chart-empty { width: 100%; height: 100%; display: grid; place-items: center; color: var(--c-526472); font-size: 11px; background: var(--c-111922); }
-.drivers-card, .forecast-card, .market-overview-card { min-height: 280px; }
+.drivers-card, .kpi-card, .market-overview-card { min-height: 280px; }
 .driver-list { padding: 0 18px 18px; }
 .driver { margin-bottom: 13px; }
 .driver > div:first-child { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 5px; font-size: 10px; color: var(--c-aab6c0); }
@@ -524,11 +524,11 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .driver b { font-size: 10px; color: var(--c-dce6ed); }
 .driver-track { height: 3px; margin: 7px 0 0 29px; border-radius: 999px; background: var(--c-1c2a34); overflow: hidden; }
 .driver-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--a-ff9800), var(--a-ffd060)); border-radius: inherit; }
-.forecast-visual { position: relative; height: 145px; margin: 0 15px; overflow: hidden; border: 1px solid var(--c-1f2c37); border-radius: 7px; background: linear-gradient(180deg,var(--c-111a24),var(--c-0e161e)); }
-.forecast-visual svg { width: 100%; height: 100%; opacity: .88; }
-.forecast-legend { padding: 13px 17px 16px; display: flex; justify-content: space-between; color: var(--c-687987); font-size: 9px; }
-.forecast-legend span { display: flex; gap: 6px; align-items: center; }
-.forecast-legend b { color: var(--c-a6b6c4); }
+.kpi-visual { position: relative; height: 145px; margin: 0 15px; overflow: hidden; border: 1px solid var(--c-1f2c37); border-radius: 7px; background: linear-gradient(180deg,var(--c-111a24),var(--c-0e161e)); }
+.kpi-visual svg { width: 100%; height: 100%; opacity: .88; }
+.kpi-legend { padding: 13px 17px 16px; display: flex; justify-content: space-between; color: var(--c-687987); font-size: 9px; }
+.kpi-legend span { display: flex; gap: 6px; align-items: center; }
+.kpi-legend b { color: var(--c-a6b6c4); }
 .blue-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
 .overview-list { padding: 0 18px; }
 .overview-list div { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--c-1c2933); font-size: 10px; }
@@ -824,24 +824,24 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 }
 
 /* =========================================================
-   Forecast card v2 — KPI row + clean responsive chart
+   KPI card v2 — KPI row + clean responsive chart
    This block intentionally comes last so it overrides the
-   earlier wireframe forecast styles.
+   earlier wireframe styles.
    ========================================================= */
-.forecast-card {
+.kpi-card {
   min-height: 330px;
   overflow: hidden;
 }
 
-.forecast-summary-row {
+.kpi-summary-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 118px;
   gap: 10px;
   padding: 0 16px 14px;
 }
 
-.forecast-stat-card,
-.forecast-delta-pill {
+.kpi-stat-card,
+.kpi-delta-pill {
   min-width: 0;
   min-height: 82px;
   border: 1px solid var(--c-1f2c37);
@@ -850,8 +850,8 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   padding: 12px 14px;
 }
 
-.forecast-stat-card span,
-.forecast-delta-pill span {
+.kpi-stat-card span,
+.kpi-delta-pill span {
   display: block;
   color: var(--c-6f8394);
   font-size: 9px;
@@ -861,8 +861,8 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   letter-spacing: .09em;
 }
 
-.forecast-stat-card strong,
-.forecast-delta-pill strong {
+.kpi-stat-card strong,
+.kpi-delta-pill strong {
   display: block;
   margin-top: 6px;
   color: var(--c-eef5fb);
@@ -872,8 +872,8 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   font-variant-numeric: tabular-nums;
 }
 
-.forecast-stat-card small,
-.forecast-delta-pill small {
+.kpi-stat-card small,
+.kpi-delta-pill small {
   display: block;
   margin-top: 6px;
   color: var(--c-607382);
@@ -881,52 +881,52 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   line-height: 1.25;
 }
 
-.forecast-stat-card.emphasis {
+.kpi-stat-card.emphasis {
   border-color: var(--c-2b4054);
   box-shadow: inset 0 0 0 1px rgba(255, 176, 32, .07);
 }
 
-.forecast-stat-card.emphasis strong {
+.kpi-stat-card.emphasis strong {
   color: var(--c-f5f8ff);
 }
 
-.forecast-delta-pill {
+.kpi-delta-pill {
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
-.forecast-delta-pill.up {
+.kpi-delta-pill.up {
   border-color: rgba(255, 176, 32, .25);
   background: linear-gradient(180deg, rgba(255, 176, 32, .09), rgba(255, 176, 32, .04));
 }
 
-.forecast-delta-pill.up strong,
-.forecast-delta-pill.up small {
+.kpi-delta-pill.up strong,
+.kpi-delta-pill.up small {
   color: var(--green);
 }
 
-.forecast-delta-pill.down {
+.kpi-delta-pill.down {
   border-color: rgba(255, 98, 108, .25);
   background: linear-gradient(180deg, rgba(255, 98, 108, .09), rgba(255, 98, 108, .04));
 }
 
-.forecast-delta-pill.down strong,
-.forecast-delta-pill.down small {
+.kpi-delta-pill.down strong,
+.kpi-delta-pill.down small {
   color: var(--red);
 }
 
-.forecast-delta-pill.flat {
+.kpi-delta-pill.flat {
   border-color: var(--c-293846);
   background: linear-gradient(180deg, var(--c-111a24), var(--c-0e161e));
 }
 
-.forecast-delta-pill.flat strong,
-.forecast-delta-pill.flat small {
+.kpi-delta-pill.flat strong,
+.kpi-delta-pill.flat small {
   color: var(--c-aab8c4);
 }
 
-.forecast-visual {
+.kpi-visual {
   position: relative;
   height: 132px;
   margin: 0 16px;
@@ -936,14 +936,14 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   background: linear-gradient(180deg, var(--c-111a24), var(--c-0e161e));
 }
 
-.forecast-visual svg {
+.kpi-visual svg {
   display: block;
   width: 100%;
   height: 100%;
   opacity: .96;
 }
 
-.forecast-legend {
+.kpi-legend {
   padding: 13px 17px 16px;
   display: flex;
   align-items: center;
@@ -953,28 +953,28 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
   font-size: 9px;
 }
 
-.forecast-legend span {
+.kpi-legend span {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.forecast-legend b {
+.kpi-legend b {
   color: var(--c-a6b6c4);
 }
 
 /* =========================================================
    Gauge v2 — arc + moving marker, no text-obscuring needle
    ========================================================= */
-.egsi-gauge {
+.index-gauge {
   position: relative;
   width: min(100%, 340px);
   height: 250px;
   margin: 6px auto 0;
 }
 
-.egsi-gauge svg {
+.index-gauge svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -1036,38 +1036,38 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 }
 
 @media (max-width: 1120px) {
-  .forecast-summary-row {
+  .kpi-summary-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 680px) {
-  .forecast-summary-row {
+  .kpi-summary-row {
     grid-template-columns: 1fr 1fr;
   }
 
-  .forecast-delta-pill {
+  .kpi-delta-pill {
     grid-column: 1 / -1;
     min-height: 66px;
   }
 
-  .forecast-legend {
+  .kpi-legend {
     align-items: flex-start;
     flex-direction: column;
   }
 }
 
 @media (max-width: 420px) {
-  .forecast-summary-row {
+  .kpi-summary-row {
     grid-template-columns: 1fr;
   }
 
-  .forecast-delta-pill {
+  .kpi-delta-pill {
     grid-column: auto;
   }
 
-  .forecast-stat-card strong,
-  .forecast-delta-pill strong {
+  .kpi-stat-card strong,
+  .kpi-delta-pill strong {
     font-size: 25px;
   }
 }

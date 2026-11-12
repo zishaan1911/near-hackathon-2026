@@ -9,10 +9,10 @@ import { sendChatMessage, type ChatMessage } from '../lib/api';
  *
  * The Groq API key never touches this file. Every message goes through
  * the gateway's POST /api/v1/chat, which holds the key server-side and
- * grounds the assistant in the platform's real, current EGSI/forecast
+ * grounds the assistant in the platform's real, current Compute Index
  * readings -- see api/src/routes/chat.ts's module comment for why that
  * matters (a model with no real data either refuses to answer "what's
- * the EGSI right now" or invents a plausible-sounding number).
+ * the index right now" or invents a plausible-sounding number).
  */
 export function ChatWidget() {
   const [open, setOpen] = useState(true);
@@ -54,7 +54,7 @@ export function ChatWidget() {
           <div className="chat-panel-head">
             <div>
               <strong>Kora Assistant</strong>
-              <span>Ask about the platform or live EGSI stats</span>
+              <span>Ask about the platform or the live Compute Index</span>
             </div>
             <button className="chat-close" onClick={() => setOpen(false)} aria-label="Close chat">
               ×
@@ -64,8 +64,8 @@ export function ChatWidget() {
           <div className="chat-messages" ref={scrollRef}>
             {messages.length === 0 && (
               <div className="chat-empty">
-                <p>Hi! I can explain how Congest works, or tell you the current EGSI and forecast.</p>
-                <p>Try: &ldquo;What is EGSI?&rdquo; or &ldquo;What&rsquo;s the current gas stress level?&rdquo;</p>
+                <p>Hi! I can explain how Congest works, or tell you the current Compute Index (CCI).</p>
+                <p>Try: &ldquo;What is the Compute Index?&rdquo; or &ldquo;What&rsquo;s the CCI right now?&rdquo;</p>
               </div>
             )}
 

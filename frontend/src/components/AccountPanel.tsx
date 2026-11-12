@@ -25,7 +25,7 @@ function formatContracts(quantity: number): string {
   return (quantity / CONTRACT_SCALE).toFixed(2);
 }
 
-export function AccountPanel({ settled }: { settled: boolean }) {
+export function AccountPanel({ settled, currentMarketId }: { settled: boolean; currentMarketId?: string }) {
   const { accountId, signAndSend } = useNear();
   const [account, setAccount] = useState<AccountView | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -261,6 +261,13 @@ export function AccountPanel({ settled }: { settled: boolean }) {
                 {trades.map((trade: TradeView) => {
                   const isBuyer = trade.buyer === accountId;
                   const claimed = isBuyer ? trade.buyerClaimed : trade.sellerClaimed;
+                  // Trades from an earlier (rolled) market are claimable even
+                  // though the current market is still live.
+                  // currentMarketId is "<contract>#<n>"; trade.marketId is n.
+                  const currentNumber = currentMarketId?.split('#').pop();
+                  const fromEarlierMarket =
+                    currentNumber !== undefined && String(trade.marketId) !== currentNumber;
+                  const claimable = settled || fromEarlierMarket;
 
                   return (
                     <tr key={trade.tradeId}>
@@ -273,7 +280,7 @@ export function AccountPanel({ settled }: { settled: boolean }) {
                       <td>
                         {claimed ? (
                           <span className="session-chip">Claimed</span>
-                        ) : settled ? (
+                        ) : claimable ? (
                           <button
                             className="button button-small button-primary"
                             disabled={busy !== null}
@@ -288,7 +295,7 @@ export function AccountPanel({ settled }: { settled: boolean }) {
                             Claim
                           </button>
                         ) : (
-                          <span className="section-note">Awaiting settlement</span>
+                          <span className="section-note">Awaiting settlement (this hour's market settles at expiry)</span>
                         )}
                       </td>
                     </tr>

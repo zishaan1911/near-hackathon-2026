@@ -12,8 +12,6 @@ export function formatComponentValue(unit: string, value: number | null | undefi
       return `$${value.toFixed(2)} ${unit.slice(1)}`;
     case '$/TH/day':
       return `$${value.toFixed(4)} ${unit.slice(1)}`;
-    case 'EGSI':
-      return `${Math.round(value)} EGSI`;
     default:
       return `${value.toFixed(2)} ${unit}`;
   }

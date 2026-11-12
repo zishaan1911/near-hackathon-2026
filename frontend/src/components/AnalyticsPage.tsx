@@ -8,18 +8,51 @@ export function AnalyticsPage({ snapshot, candles }: { snapshot: MarketSnapshot 
   const macdNow = m.macd.at(-1);
   const ma20 = sma(closes, 20).at(-1);
   const summary = summarise(closes);
+  const level = snapshot?.index?.level;
+  const pillars = snapshot?.pillars ?? [];
+  const hasHistory = closes.length >= 2;
+  const fmt = (v: number | null | undefined, digits: number) =>
+    v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(digits);
+
   return (
     <div className="analytics-page">
       <section className="card">
-        <div className="card-heading"><div><span className="section-kicker">EGSI ANALYTICS</span><h2>Network Momentum</h2></div><span className={`analysis-tone tone-${summary.tone}`}>{summary.label}</span></div>
+        <div className="card-heading">
+          <div>
+            <span className="section-kicker">INDEX ANALYTICS</span>
+            <h2>Compute Index Momentum</h2>
+          </div>
+          {hasHistory && <span className={`analysis-tone tone-${summary.tone}`}>{summary.label}</span>}
+        </div>
+        {!hasHistory && (
+          <div className="muted-empty">
+            Not enough index history yet. Indicators appear once at least two candles have been recorded
+            or observed in this session; none are estimated.
+          </div>
+        )}
       </section>
       <div className="analytics-metrics">
-        <section className="card"><span>Current EGSI</span><strong>{Math.round(snapshot?.egsi.score ?? 0)}</strong><small>0–1000 stress index</small></section>
-        <section className="card"><span>RSI 14</span><strong>{rsi14 === null || rsi14 === undefined ? '—' : rsi14.toFixed(1)}</strong><small>Momentum only — not “overbought”</small></section>
-        <section className="card"><span>MACD</span><strong>{macdNow === null || macdNow === undefined ? '—' : macdNow.toFixed(2)}</strong><small>EMA momentum spread</small></section>
-        <section className="card"><span>SMA 20</span><strong>{ma20 === null || ma20 === undefined ? '—' : ma20.toFixed(1)}</strong><small>Trailing EGSI average</small></section>
+        <section className="card"><span>Current CCI</span><strong>{typeof level === 'number' ? level.toFixed(1) : '—'}</strong><small>Base {snapshot?.index?.base ?? 1000}</small></section>
+        <section className="card"><span>RSI 14</span><strong>{fmt(rsi14, 1)}</strong><small>Momentum only — not “overbought”</small></section>
+        <section className="card"><span>MACD</span><strong>{fmt(macdNow, 2)}</strong><small>EMA momentum spread</small></section>
+        <section className="card"><span>SMA 20</span><strong>{fmt(ma20, 1)}</strong><small>Trailing CCI average</small></section>
       </div>
-      <div className="analytics-note">Technical indicators here are applied to EGSI, a computed congestion index—not a traded spot asset—so conventional “overbought/oversold” interpretations should not be used.</div>
+      <section className="card">
+        <div className="card-heading"><h2>Pillar levels</h2></div>
+        <div className="driver-list">
+          {pillars.length ? pillars.map((p) => (
+            <div className="driver" key={p.id}>
+              <div>
+                <span className="driver-icon">⌁</span>
+                <span>{p.label}</span>
+                <b>{p.status === 'down' || p.level === null ? 'down' : p.level.toFixed(0)} · {Math.round(p.effectiveWeight * 100)}%</b>
+              </div>
+              <div className="driver-track"><span style={{ width: `${Math.min(100, Math.max(2, p.effectiveWeight * 100))}%` }} /></div>
+            </div>
+          )) : <div className="muted-empty">No pillar data available.</div>}
+        </div>
+      </section>
+      <div className="analytics-note">Technical indicators here are applied to the Compute Index, a computed benchmark of compute prices, so conventional “overbought/oversold” interpretations should not be used.</div>
     </div>
   );
 }
