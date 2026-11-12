@@ -32,7 +32,7 @@ interface OrderViewLike {
 }
 
 function log(message: string, fields: Record<string, unknown> = {}): void {
-  console.log(`[gasx/seed] ${message} ${JSON.stringify(fields)}`);
+  console.log(`[silica/seed] ${message} ${JSON.stringify(fields)}`);
 }
 
 function envNumber(name: string, fallback: number): number {
