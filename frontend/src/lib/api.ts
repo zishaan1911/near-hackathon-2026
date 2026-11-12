@@ -418,8 +418,12 @@ function normaliseCandle(item: unknown): Candle | null {
 /** `intervalSeconds` is the candle bucket width the gateway aggregates
  * index readings into (e.g. 60 = 1m, 3600 = 1h). Defaults to the
  * gateway's own default (300s / 5m) when omitted. */
-export async function getCandles(intervalSeconds?: number): Promise<Candle[]> {
-  const query = intervalSeconds ? `?interval=${intervalSeconds}` : '';
+export async function getCandles(intervalSeconds?: number, limit?: number): Promise<Candle[]> {
+  const params = new URLSearchParams();
+  if (intervalSeconds) params.set('interval', String(intervalSeconds));
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  const query = qs ? `?${qs}` : '';
   const payload = await request(`/api/v1/candles${query}`);
   const source = findHistoryArray(payload);
 
@@ -665,6 +669,14 @@ export interface ComputeHistoryResponse {
     btc_hashprice: ComputeHistoryPoint[];
     blockspace: ComputeHistoryPoint[];
   };
+  /** Daily partial reconstruction from the pillars with public history. */
+  backcast: {
+    points: Array<{ t: string; level: number }>;
+    method: string;
+    pillars: string[];
+  };
+  /** Hourly markets settled on chain, each at its settlement level. */
+  settlements: Array<{ t: string; level: number; marketId: number | null }>;
 }
 
 function historySeries(value: unknown, key: string): Array<{ t: string; v: number }> {
@@ -683,7 +695,25 @@ export async function getComputeHistory(days = 30): Promise<ComputeHistoryRespon
   const backfill = rec(root.backfill);
   const toPoints = (value: unknown) =>
     historySeries(value, 'value').map(({ t, v }) => ({ t, value: v }));
+  const backcast = rec(root.backcast);
+  const settlements = Array.isArray(root.settlements)
+    ? root.settlements.flatMap((item) => {
+        if (!isRecord(item) || typeof item.t !== 'string') return [];
+        const level = item.level;
+        if (typeof level !== 'number' || !Number.isFinite(level)) return [];
+        const id = Number(item.marketId);
+        return [{ t: item.t, level, marketId: Number.isFinite(id) ? id : null }];
+      })
+    : [];
   return {
+    backcast: {
+      points: historySeries(backcast.points, 'level').map(({ t, v }) => ({ t, level: v })),
+      method: typeof backcast.method === 'string' ? backcast.method : '',
+      pillars: Array.isArray(backcast.pillars)
+        ? backcast.pillars.filter((p): p is string => typeof p === 'string')
+        : [],
+    },
+    settlements,
     persisted: root.persisted === true,
     points: historySeries(root.points, 'level').map(({ t, v }) => ({ t, level: v })),
     backfill: {
