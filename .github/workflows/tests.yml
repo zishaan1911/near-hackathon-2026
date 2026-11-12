@@ -68,26 +68,6 @@ jobs:
       - name: Run C++ tests
         run: bash scripts/test-all.sh cpp
 
-  python:
-    name: Python tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: ai/requirements.txt
-
-      - name: Install Python dependencies
-        run: python -m pip install -r ai/requirements.txt
-
-      - name: Run Python tests
-        run: bash scripts/test-all.sh python
-
   contracts:
     name: NEAR contract tests
     runs-on: ubuntu-latest

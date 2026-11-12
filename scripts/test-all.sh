@@ -2,7 +2,6 @@
 # Runs all test suites, or one selected suite:
 #   - contracts/near          (Rust, cargo test)
 #   - engine                  (C++)
-#   - ai                      (Python)
 #   - blockchain/near         (TypeScript)
 #   - api                      (TypeScript)
 #   - frontend                 (TypeScript)
@@ -12,13 +11,11 @@
 #   ./scripts/test-all.sh all
 #   ./scripts/test-all.sh typescript
 #   ./scripts/test-all.sh frontend
-#   ./scripts/test-all.sh python
 #   ./scripts/test-all.sh cpp
 #   ./scripts/test-all.sh contracts
 #
-# Requires: cargo (Rust), cmake + a C++17 compiler, either an
-# ai/venv (see ai/README.md) or pytest importable via `python3 -m
-# pytest`, and Node.js >= 18 + npm for the TypeScript stacks.
+# Requires: cargo (Rust), cmake + a C++17 compiler, and Node.js >= 18 + npm
+# for the TypeScript stacks.
 #
 # api/ depends on blockchain/near being built first (its dist/ must
 # exist), so the TypeScript suite builds it first.
@@ -30,11 +27,11 @@ SELECTED_SUITE="${1:-all}"
 FAILED=0
 
 usage() {
-  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|python|cpp|contracts]"
+  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|cpp|contracts]"
 }
 
 case "$SELECTED_SUITE" in
-  all|typescript|frontend|python|cpp|contracts)
+  all|typescript|frontend|cpp|contracts)
     ;;
   *)
     echo "Unknown test suite: $SELECTED_SUITE"
@@ -85,43 +82,6 @@ run_cpp() {
   fi
 
   echo "!! Engine tests FAILED"
-  return 1
-}
-
-run_python() {
-  echo
-  echo "==> ai (Python)"
-
-  local pytest_command
-
-  # Preserve the original interpreter and pytest resolution order.
-  if [ -x "$REPO_ROOT/ai/venv/bin/pytest" ]; then
-    pytest_command="$REPO_ROOT/ai/venv/bin/pytest"
-  elif command -v pytest >/dev/null 2>&1; then
-    pytest_command="pytest"
-  elif python3 -c "import pytest" >/dev/null 2>&1; then
-    pytest_command="python3 -m pytest"
-  else
-    pytest_command=""
-  fi
-
-  if [ -z "$pytest_command" ]; then
-    echo "!! pytest not found (no ai/venv, and no system pytest) — skipping AI tests"
-    echo "   (see ai/README.md for setup instructions)"
-    return 1
-  fi
-
-  # Disable globally registered third-party pytest plugins. Project
-  # conftest.py files and tests are still discovered normally.
-  if (
-    cd "$REPO_ROOT/ai" &&
-    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $pytest_command
-  ); then
-    echo "-- AI service tests passed"
-    return 0
-  fi
-
-  echo "!! AI service tests FAILED"
   return 1
 }
 
@@ -236,7 +196,6 @@ case "$SELECTED_SUITE" in
   all)
     run_and_record run_contracts
     run_and_record run_cpp
-    run_and_record run_python
     run_and_record run_typescript
     run_and_record run_frontend
     ;;
@@ -245,9 +204,6 @@ case "$SELECTED_SUITE" in
     ;;
   cpp)
     run_and_record run_cpp
-    ;;
-  python)
-    run_and_record run_python
     ;;
   typescript)
     run_and_record run_typescript

@@ -5,12 +5,11 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "echo skip",
   "functions": {
-    "api/index.js": { "maxDuration": 60 },
-    "api/ai.py": { "maxDuration": 30, "includeFiles": "ai/**" }
+    "api/index.js": { "maxDuration": 60 }
   },
+  "crons": [{ "path": "/api/v1/cron/tick", "schedule": "0 0 * * *" }],
   "rewrites": [
     { "source": "/api/v1/(.*)", "destination": "/api/index" },
-    { "source": "/api/ai/(.*)", "destination": "/api/ai" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

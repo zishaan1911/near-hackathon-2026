@@ -16,28 +16,12 @@ services:
       timeout: 5s
       retries: 20
 
-  ai:
-    build:
-      context: .
-      dockerfile: Dockerfile.ai
-    restart: unless-stopped
-    environment:
-      GASX_AI_ETHEREUM_RPC_URL: ${GASX_AI_ETHEREUM_RPC_URL:-https://ethereum-rpc.publicnode.com}
-      GASX_AI_CYCLE_INTERVAL_SECONDS: ${GASX_AI_CYCLE_INTERVAL_SECONDS:-12}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 15s
-
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     restart: unless-stopped
     environment:
-      GASX_API_AI_SERVICE_URL: http://ai:8000
       GASX_API_DATABASE_URL: mysql://gasx:gasx@mysql:3306/gasx
       GASX_NEAR_NETWORK: ${GASX_NEAR_NETWORK:-testnet}
       GASX_NEAR_RPC_URL: ${GASX_NEAR_RPC_URL:-https://test.rpc.fastnear.com}
@@ -46,8 +30,6 @@ services:
       GASX_NEAR_DEV_MARKET: ${GASX_NEAR_DEV_MARKET:-true}
     depends_on:
       mysql:
-        condition: service_healthy
-      ai:
         condition: service_healthy
     ports:
       - "3000:3000"
@@ -73,10 +55,9 @@ services:
     profiles: ["live"]
     env_file: .env
     environment:
-      GASX_PUBLISH_AI_URL: ${GASX_PUBLISH_AI_URL:-http://ai:8000}
+      GASX_PUBLISH_API_URL: ${GASX_PUBLISH_API_URL:-http://api:3000}
     depends_on:
-      ai:
-        condition: service_healthy
+      - api
 
   matcher:
     build:
