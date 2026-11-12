@@ -1,5 +1,5 @@
 /**
- * CCI v2.0 calculation (matched-quote method).
+ * SCI v2.0 calculation (matched-quote method).
  *
  * quote relative = price / base price of the same quote key. Relatives are
  * combined by weighted geometric mean: quote -> product -> component, and

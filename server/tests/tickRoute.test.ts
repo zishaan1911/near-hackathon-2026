@@ -1,7 +1,7 @@
-﻿import Fastify from 'fastify';
+import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { NearAdapterConfig, TickContext, TickReport } from '@gasx/near-adapter';
-import { registerTickRoute } from '../src/tick-route.js';
+import { liquidityContext, registerTickRoute } from '../src/tick-route.js';
 
 const config: NearAdapterConfig = {
   network: 'testnet',
@@ -103,7 +103,7 @@ describe('POST /api/v1/market/poke', () => {
     });
     const res = await app.inject({ method: 'POST', url: '/api/v1/market/poke' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ published: 412, settled: true, rolled: 1_700_000_000_000, matched: 1 });
+    expect(res.json()).toEqual({ published: 412, settled: true, rolled: 1_700_000_000_000, matched: 1, quoted: 0 });
     expect(res.body).not.toContain('secret');
     expect(calls()).toBe(1);
   });
@@ -137,5 +137,22 @@ describe('POST /api/v1/market/poke', () => {
     });
     const res = await app.inject({ method: 'POST', url: '/api/v1/market/poke' });
     expect(res.body).not.toMatch(/rpc|SECRET|exploded/);
+  });
+});
+
+describe('liquidityContext', () => {
+  it('is empty unless GASX_DEMO_LIQUIDITY is exactly true and a publisher account is set', () => {
+    expect(liquidityContext({})).toEqual({});
+    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: 'true' })).toEqual({});
+    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: '1', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' })).toEqual({});
+  });
+
+  it('uses defaults and the quantity override', () => {
+    const base = { GASX_DEMO_LIQUIDITY: 'true', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' };
+    expect(liquidityContext(base)).toEqual({
+      signerAccountId: 'p.testnet',
+      liquidity: { quantity: 100, offsetTicks: 1, maxRepriceDistance: 3 },
+    });
+    expect(liquidityContext({ ...base, GASX_DEMO_LIQUIDITY_QUANTITY: '1' }).liquidity?.quantity).toBe(1);
   });
 });

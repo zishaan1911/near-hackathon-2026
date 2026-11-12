@@ -9,8 +9,8 @@ export const CACHE_TTL_MS = 60_000;
 
 export interface CciResponse {
   index: {
-    id: 'CCI';
-    name: 'Congest Compute Index';
+    id: 'SCI';
+    name: 'Silica Compute Index';
     level: number | null;
     base: number;
     baseDate: string;
@@ -34,7 +34,7 @@ export interface ComputeServiceOptions {
   blockspace?: () => Promise<BlockspaceReading>;
 }
 
-/** Computes the CCI with a short in-memory cache. Never throws. */
+/** Computes the SCI with a short in-memory cache. Never throws. */
 export function createComputeService(opts: ComputeServiceOptions): () => Promise<CciResponse> {
   const now = opts.now ?? (() => Date.now());
   const ttl = opts.ttlMs ?? CACHE_TTL_MS;
@@ -49,8 +49,8 @@ export function createComputeService(opts: ComputeServiceOptions): () => Promise
     const calc = computeIndex(fetched, opts.baseQuotes ?? BASE_QUOTES, opts.baseValues ?? BASE_VALUES);
     return {
       index: {
-        id: 'CCI',
-        name: 'Congest Compute Index',
+        id: 'SCI',
+        name: 'Silica Compute Index',
         level: calc.level,
         base: INDEX_BASE,
         baseDate: BASE_DATE,

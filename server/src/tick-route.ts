@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cron tick endpoint. Supabase pg_cron + pg_net call it every minute (see
  * supabase/migrations/0002_cron.sql); it publishes the oracle price,
  * settles/rolls the market and matches orders via the adapter's runTick,
@@ -57,6 +57,23 @@ function defaultSigner(env: NodeJS.ProcessEnv): TickContext['signer'] {
 }
 
 
+/**
+ * Demo liquidity (testnet only): when GASX_DEMO_LIQUIDITY is 'true' the
+ * publisher account also quotes a bid and an ask. The maker is the oracle
+ * account, a conflict of interest that is acceptable only for a demo.
+ */
+export function liquidityContext(env: NodeJS.ProcessEnv): Partial<TickContext> {
+  if (env.GASX_DEMO_LIQUIDITY !== 'true') return {};
+  const accountId = env.GASX_NEAR_PUBLISHER_ACCOUNT_ID;
+  if (!accountId) return {};
+  const qty = Number(env.GASX_DEMO_LIQUIDITY_QUANTITY);
+  const quantity = Number.isInteger(qty) && qty > 0 ? qty : 100;
+  return {
+    signerAccountId: accountId,
+    liquidity: { quantity, offsetTicks: 1, maxRepriceDistance: 3 },
+  };
+}
+
 export function registerTickRoute(app: FastifyInstance, deps: TickRouteDeps): void {
   const now = deps.now ?? Date.now;
   const run = deps.runTick ?? runTick;
@@ -77,6 +94,7 @@ export function registerTickRoute(app: FastifyInstance, deps: TickRouteDeps): vo
         contractId: deps.config.contractId,
         signer,
         getPrice: deps.getPrice,
+        ...liquidityContext(env),
       });
     } finally {
       inFlight = false;
@@ -124,6 +142,7 @@ export function registerTickRoute(app: FastifyInstance, deps: TickRouteDeps): vo
         settled: report.settled,
         rolled: report.rolled,
         matched: report.matched.length,
+        quoted: (report.quoted?.bids ?? 0) + (report.quoted?.asks ?? 0),
       });
     } catch (err) {
       request.log.error({ message: (err as Error).message }, 'poke tick failed');

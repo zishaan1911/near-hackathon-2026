@@ -1,4 +1,4 @@
-/** Hand-made upstream fixtures for the CCI tests. No network. */
+/** Hand-made upstream fixtures for the SCI tests. No network. */
 import { MODEL_BASKET } from '../src/compute/basket.js';
 import type { FetchImpl } from '../src/compute/types.js';
 

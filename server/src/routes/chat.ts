@@ -1,4 +1,4 @@
-﻿/**
+/**
  * POST /api/v1/chat — a platform-explainer assistant backed by Groq.
  *
  * Why this lives server-side rather than the frontend calling Groq
@@ -9,10 +9,10 @@
  * steps", it would be a public key. This route is the only thing that
  * ever sees GASX_API_GROQ_API_KEY.
  *
- * The assistant is given the live Congest Compute Index (CCI) level and
+ * The assistant is given the live Silica Compute Index (SCI) level and
  * its pillars as context on every request, from the shared compute
  * service (deps.getCci, best-effort). Without this, the model would either
- * refuse to answer "what's the CCI right now" or hallucinate a
+ * refuse to answer "what's the SCI right now" or hallucinate a
  * plausible-sounding number.
  *
  * Conversation history is kept client-side and sent whole on every
@@ -60,19 +60,19 @@ function validateMessages(body: ChatBody): ChatMessage[] | string {
 }
 
 /** Builds the system prompt: static platform description plus the live
- * Congest Compute Index (CCI) reading when available. Best-effort - a
+ * Silica Compute Index (SCI) reading when available. Best-effort - a
  * failing compute service degrades this to "no live reading available"
  * rather than failing the whole chat request. */
 async function buildSystemPrompt(deps: GatewayDeps): Promise<string> {
   const cci = await deps.getCci().catch(() => null);
 
   const lines = [
-    'You are Kora, the assistant for Congest, a market for the price of ' +
-      'compute. Congest publishes the Congest Compute Index (CCI) and lists ' +
-      'an hourly CCI future on NEAR.',
+    'You are Kora, the assistant for Silica. Silica is a market for the price of ' +
+      'compute. Silica publishes the Silica Compute Index (SCI) and lists ' +
+      'an hourly SCI future (market SCI-1H) on NEAR.',
     '',
     'Key facts about the platform:',
-    '- The CCI is a composite index of what compute costs right now, set to ' +
+    '- The SCI is a composite index of what compute costs right now, set to ' +
       '1000 at its base date. Above 1000 means compute is pricier than at ' +
       'the base date; below 1000 means cheaper.',
     '- It has six pillars: GPU rental (Vast.ai, RunPod, Akash), cloud GPU ' +
@@ -81,11 +81,11 @@ async function buildSystemPrompt(deps: GatewayDeps): Promise<string> {
       'blockspace (a 7-day median of base fees). Each pillar carries a ' +
       'weight; if a pillar is down, the remaining weights are rescaled and ' +
       'the index is flagged as degraded.',
-    '- The hourly CCI future is a one-hour contract on the index level, ' +
-      'settled in USDC on NEAR. An oracle account publishes the CCI level ' +
+    '- The hourly SCI future is a one-hour contract on the index level, ' +
+      'settled in USDC on NEAR. An oracle account publishes the SCI level ' +
       'on-chain; when the hour ends the contract settles at the last ' +
       'published level and the next hourly market is rolled in. Buyers ' +
-      'gain if the CCI settles higher than their entry price, sellers ' +
+      'gain if the SCI settles higher than their entry price, sellers ' +
       'gain if it settles lower.',
     '- Order sizes and positions are capped by risk limits enforced in the ' +
       'gateway.',
@@ -99,12 +99,12 @@ async function buildSystemPrompt(deps: GatewayDeps): Promise<string> {
       .map((c) => `${c.label}: ${c.status === 'ok' && c.level !== null ? Math.round(c.level) : 'down'}`)
       .join('; ');
     lines.push(
-      `Current live reading: CCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), ` +
+      `Current live reading: SCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), ` +
         `as of ${cci.index.asOf}${cci.index.degraded ? ', degraded (some pillars are down)' : ''}.`,
       `Pillar levels (1000 = base): ${pillars}.`,
     );
   } else {
-    lines.push('No live CCI reading is available right now -- say so rather than guessing a number.');
+    lines.push('No live SCI reading is available right now -- say so rather than guessing a number.');
   }
 
   lines.push(

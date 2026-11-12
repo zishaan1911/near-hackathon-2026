@@ -1,16 +1,16 @@
 /**
- * Market routes for the hourly Congest Compute Index (CCI) future:
- *   GET /api/v1/market   on-chain market state + live CCI level, pillars,
+ * Market routes for the hourly Silica Compute Index (SCI) future:
+ *   GET /api/v1/market   on-chain market state + live SCI level, pillars,
  *                        on-chain depth and an indicative quote
- *   GET /api/v1/candles  OHLC buckets of the persisted CCI levels
+ *   GET /api/v1/candles  OHLC buckets of the persisted SCI levels
  */
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../server.js';
 
-const MARKET_ID = 'CCI-1H';
+const MARKET_ID = 'SCI-1H';
 
 export function registerMarketRoutes(app: FastifyInstance, deps: GatewayDeps): void {
-  /** CCI level as OHLC candles for the chart. */
+  /** SCI level as OHLC candles for the chart. */
   app.get<{ Querystring: { interval?: string; limit?: string } }>(
     '/api/v1/candles',
     async (request, reply) => {

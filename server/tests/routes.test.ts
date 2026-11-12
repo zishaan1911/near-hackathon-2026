@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer, type GatewayDeps } from '../src/server.js';
 import type { CciResponse } from '../src/compute/service.js';
@@ -47,15 +47,15 @@ describe('GET /api/v1/health', () => {
 });
 
 describe('GET /api/v1/market', () => {
-  it('combines NEAR market state with the CCI, pillars, book and quote', async () => {
-    chainAdapter.marketState = makeMarketState({ underlying: 'CCI-1H' });
+  it('combines NEAR market state with the SCI, pillars, book and quote', async () => {
+    chainAdapter.marketState = makeMarketState({ underlying: 'SCI-1H' });
     chainAdapter.openOrders = [makeOrderView({ orderId: 1, isBid: true, price: 1040, quantity: 5 })];
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/market' });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.market.underlying).toBe('CCI-1H');
+    expect(body.market.underlying).toBe('SCI-1H');
     expect(body.index).toEqual({
       level: 1042.6,
       base: 1000,
@@ -327,7 +327,7 @@ describe('GET /api/v1/candles and removed history', () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it('serves CCI-1H candles from the database', async () => {
+  it('serves SCI-1H candles from the database', async () => {
     const seen: Array<[number, number]> = [];
     const candle = { time: 1_700_000_000, open: 1000, high: 1010, low: 995, close: 1005, samples: 3 };
     const dbApp = buildServer({
@@ -344,7 +344,7 @@ describe('GET /api/v1/candles and removed history', () => {
     });
     const res = await dbApp.inject({ method: 'GET', url: '/api/v1/candles?interval=60&limit=5' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ market: 'CCI-1H', interval: 60, count: 1, candles: [candle] });
+    expect(res.json()).toEqual({ market: 'SCI-1H', interval: 60, count: 1, candles: [candle] });
     expect(seen).toEqual([[60, 5]]);
 
     const history = await dbApp.inject({ method: 'GET', url: '/api/v1/history' });

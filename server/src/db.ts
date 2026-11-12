@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Postgres (Supabase) access for the API gateway — the only service that
  * talks to the database (ARCHITECTURE.md §2: the gateway owns "indexing",
  * and Storage holds "durable state; live index/orderbook cached in API
@@ -64,12 +64,12 @@ export interface ComputeIndexPoint {
 }
 
 export interface Database {
-  /** Best-effort CCI snapshot write. Resolves true when stored. */
+  /** Best-effort SCI snapshot write. Resolves true when stored. */
   recordComputeIndexSnapshot(input: ComputeIndexSnapshotInput): Promise<boolean>;
-  /** CCI levels of the last `days` days (clamped 1..90), oldest first; [] on error. */
+  /** SCI levels of the last `days` days (clamped 1..90), oldest first; [] on error. */
   getComputeIndexHistory(days: number): Promise<ComputeIndexPoint[]>;
   recordPreparedOrder(row: PreparedOrderRow): Promise<void>;
-  /** CCI levels aggregated into OHLC candles for charting, oldest first; [] on error. */
+  /** SCI levels aggregated into OHLC candles for charting, oldest first; [] on error. */
   getComputeIndexCandles(intervalSeconds: number, limit: number): Promise<Candle[]>;
   close(): Promise<void>;
 }
@@ -160,7 +160,7 @@ export class PostgresDatabase implements Database {
   }
 
   /**
-   * Buckets CCI snapshots into fixed intervals and derives OHLC per bucket
+   * Buckets SCI snapshots into fixed intervals and derives OHLC per bucket
    * in SQL (open/close are the first/last level by `taken_at`). The query
    * runs newest-first so LIMIT keeps the most recent candles; the result is
    * reversed because charts read oldest-first.

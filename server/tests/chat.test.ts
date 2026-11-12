@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer, type GatewayDeps } from '../src/server.js';
 import type { RiskPolicyConfig } from '../src/riskPolicy.js';
@@ -94,16 +94,16 @@ describe('POST /api/v1/chat', () => {
 
   it('forwards to Groq with the configured model and returns the reply', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    fetchMock.mockResolvedValue(groqSuccess('Congest lists an hourly compute index future.'));
+    fetchMock.mockResolvedValue(groqSuccess('Silica lists an hourly compute index future.'));
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/chat',
-      payload: { messages: [{ role: 'user', content: 'What is Congest?' }] },
+      payload: { messages: [{ role: 'user', content: 'What is Silica?' }] },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().reply).toBe('Congest lists an hourly compute index future.');
+    expect(res.json().reply).toBe('Silica lists an hourly compute index future.');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -126,20 +126,20 @@ describe('POST /api/v1/chat', () => {
     expect(JSON.stringify(res.json())).not.toContain('super-secret-key');
   });
 
-  it('includes the live CCI reading and pillars in the system prompt when available', async () => {
+  it('includes the live SCI reading and pillars in the system prompt when available', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
     fetchMock.mockResolvedValue(groqSuccess('ok'));
 
     await app.inject({
       method: 'POST',
       url: '/api/v1/chat',
-      payload: { messages: [{ role: 'user', content: 'What is the current CCI?' }] },
+      payload: { messages: [{ role: 'user', content: 'What is the current SCI?' }] },
     });
 
     const [, init] = fetchMock.mock.calls[0]!;
     const body = JSON.parse(init.body);
     const systemMessage = body.messages[0].content as string;
-    expect(systemMessage).toMatch(/CCI = 1043/);
+    expect(systemMessage).toMatch(/SCI = 1043/);
     expect(systemMessage).toMatch(/GPU rental: 1040/);
     expect(systemMessage).toMatch(/Ethereum blockspace: down/);
     expect(systemMessage).not.toMatch(/EGSI|gas futures/i);
@@ -159,7 +159,7 @@ describe('POST /api/v1/chat', () => {
 
     const [, init] = fetchMock.mock.calls[0]!;
     const systemMessage = JSON.parse(init.body).messages[0].content as string;
-    expect(systemMessage).toMatch(/No live CCI reading is available/);
+    expect(systemMessage).toMatch(/No live SCI reading is available/);
   });
 
   it('returns 502 when Groq itself errors, with the status surfaced', async () => {

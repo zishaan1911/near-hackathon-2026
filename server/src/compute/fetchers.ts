@@ -1,5 +1,5 @@
 /**
- * Quote fetchers for the Congest Compute Index v2.0. Every fetcher takes an
+ * Quote fetchers for the Silica Compute Index v2.0. Every fetcher takes an
  * injectable `fetchImpl` (tests never touch the network), never throws
  * (failures become missing quotes plus an error string), and uses timeouts
  * with one retry on network error (see http.ts).

@@ -52,8 +52,8 @@ describe('GET /api/v1/indices/compute', () => {
     expect(res.headers['cache-control']).toBe('public, s-maxage=60, stale-while-revalidate=300');
     const body = res.json();
     expect(body.index).toMatchObject({
-      id: 'CCI',
-      name: 'Congest Compute Index',
+      id: 'SCI',
+      name: 'Silica Compute Index',
       level: 1000,
       base: 1000,
       asOf: '2026-11-11T00:00:00.000Z',

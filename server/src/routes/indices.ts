@@ -1,5 +1,5 @@
-﻿/**
- * Congest Compute Index (CCI) routes:
+/**
+ * Silica Compute Index (SCI) routes:
  *   GET  /api/v1/indices/compute          current level + components + GPU view
  *   GET  /api/v1/indices/compute/history  persisted levels + real backfill
  *   GET|POST /api/v1/cron/compute-snapshot  records a snapshot (bearer CRON_SECRET)

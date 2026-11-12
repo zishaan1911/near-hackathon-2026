@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   AccountView,
   CancelOrderParams,
   ChainAdapter,
@@ -17,7 +17,7 @@ import type { CciResponse } from '../src/compute/service.js';
 export function makeMarketState(overrides: Partial<MarketState> = {}): MarketState {
   return {
     marketId: 'gasx.testnet#1',
-    underlying: 'CCI-1H',
+    underlying: 'SCI-1H',
     expiryMs: 1_700_000_000_000,
     contractMultiplier: 10,
     tickSize: 10,
@@ -173,8 +173,8 @@ export function makeCciResponse(level: number | null = 1042.6): CciResponse {
     }) as unknown as CciResponse['components'][number];
   return {
     index: {
-      id: 'CCI',
-      name: 'Congest Compute Index',
+      id: 'SCI',
+      name: 'Silica Compute Index',
       level,
       base: 1000,
       baseDate: '2026-11-01',
