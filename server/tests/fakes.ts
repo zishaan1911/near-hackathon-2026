@@ -5,6 +5,7 @@ import type {
   ClaimParams,
   DepositParams,
   MarketState,
+  MarketSummary,
   OrderView,
   PageOptions,
   PlaceOrderParams,
@@ -85,6 +86,14 @@ export class FakeChainAdapter implements ChainAdapter {
   async getMarketState(): Promise<MarketState> {
     if (this.getMarketStateError) throw this.getMarketStateError;
     return this.marketState;
+  }
+
+  marketsById = new Map<number, MarketSummary>();
+  getMarketByIdCalls: number[] = [];
+
+  async getMarketById(marketNumber: number): Promise<MarketSummary | null> {
+    this.getMarketByIdCalls.push(marketNumber);
+    return this.marketsById.get(marketNumber) ?? null;
   }
 
   async getAccount(accountId: string): Promise<AccountView> {

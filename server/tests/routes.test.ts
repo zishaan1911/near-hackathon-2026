@@ -322,9 +322,39 @@ describe('POST /api/v1/trades/prepare-claim', () => {
 });
 
 describe('GET /api/v1/candles and removed history', () => {
-  it('returns 503 without a database', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/candles' });
-    expect(res.statusCode).toBe(503);
+  it('without a database serves candles from the back-cast + settlements, never 503', async () => {
+    const noDbApp = buildServer({
+      chainAdapter,
+      getCci: () => getCci(),
+      riskPolicy,
+      logger: false,
+      historySources: {
+        getBackfill: async () => ({ btc_hashprice: [], blockspace: [] }),
+        getBackcast: async () => ({
+          points: [
+            { t: '2026-11-09T00:00:00.000Z', level: 990 },
+            { t: '2026-11-10T00:00:00.000Z', level: 1010 },
+          ],
+          method: 'm',
+          pillars: ['btc_hashprice', 'blockspace'],
+          ethPrice: 'daily',
+        }),
+        getSettlements: async () => [{ t: '2026-11-11T10:00:00.000Z', level: 1020, marketId: 5 }],
+      },
+    });
+    const res = await noDbApp.inject({ method: 'GET', url: '/api/v1/candles?interval=3600&limit=10' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.source).toBe('backcast+settlements');
+    expect(body.market).toBe('SCI-1H');
+    expect(body.count).toBe(3);
+    expect(body.candles.map((c: { time: number }) => c.time)).toEqual([
+      Date.UTC(2026, 10, 9) / 1000,
+      Date.UTC(2026, 10, 10) / 1000,
+      Date.UTC(2026, 10, 11, 10) / 1000,
+    ]);
+    expect(body.candles[1]).toMatchObject({ open: 990, close: 1010, high: 1010, low: 990 });
+    expect(body.candles[2]).toMatchObject({ open: 1020, close: 1020, samples: 1 });
   });
 
   it('serves SCI-1H candles from the database', async () => {
