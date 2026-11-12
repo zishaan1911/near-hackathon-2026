@@ -10,7 +10,8 @@ import {
 } from '../lib/api';
 import { formatTusdc } from '../lib/format';
 import { txExplorerUrl, useNear } from '../lib/near';
-import { faucetTransaction } from '../lib/token';
+import { buildDemoPlan, DEMO_MIN_TIME_LEFT_MS, demoDepositAmount, needsDemo } from '../lib/demo';
+import { faucetTransaction, getWalletBalance } from '../lib/token';
 import {
   defaultLimitPrice,
   findNewFill,
@@ -92,6 +93,7 @@ export function Ticket({
   const [limitOpen, setLimitOpen] = useState(false);
   const [limitText, setLimitText] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
+  const [demoFailed, setDemoFailed] = useState(false);
   const limitInput = useRef<HTMLInputElement>(null);
 
   const { market, orderbook } = snap;
@@ -210,6 +212,57 @@ export function Ticket({
       });
     });
     if (hash === false) return;
+    setPending({ status: 'waiting', hash, known, started: Date.now() });
+    void data.refresh();
+  }
+
+  // The same default limit price the ticket uses for a long, whatever side is selected.
+  const demoPrice =
+    reference === null
+      ? null
+      : defaultLimitPrice('long', reference, tick, {
+          bestAsk: orderbook.asks[0]?.price,
+          bestBid: orderbook.bids[0]?.price,
+        });
+  const demoDeposit = demoPrice !== null ? demoDepositAmount(demoPrice, market) : '0';
+  const demoBusy = tx.busy === 'demo';
+  const showDemo =
+    open &&
+    configured &&
+    !market.devMode &&
+    (market.expiryMs === undefined || market.expiryMs - now > DEMO_MIN_TIME_LEFT_MS) &&
+    demoPrice !== null &&
+    demoDeposit !== '0' &&
+    needsDemo(data.account.data, { connected: near.accountId !== null });
+
+  async function demo() {
+    const accountId = near.accountId;
+    if (!accountId || demoPrice === null || demoDeposit === '0') return;
+    let known = new Set<number>();
+    setPending(null);
+    setDemoFailed(false);
+    const hash = await tx.run(
+      'demo',
+      async () => {
+        const [before, walletBalance] = await Promise.all([getAccount(accountId), getWalletBalance(accountId)]);
+        known = new Set(before.trades.map((t) => t.tradeId));
+        const [depositTx, orderTx] = await Promise.all([
+          prepareDeposit({ trader: accountId, amount: demoDeposit }),
+          prepareOrder({ trader: accountId, isBid: true, price: demoPrice, quantity: toOnChainQuantity(1) }),
+        ]);
+        return buildDemoPlan({
+          needsFaucet: BigInt(walletBalance) < BigInt(demoDeposit),
+          faucetTx: faucetTransaction(),
+          depositTx,
+          orderTx,
+        });
+      },
+      { batch: true },
+    );
+    if (hash === false) {
+      setDemoFailed(true);
+      return;
+    }
     setPending({ status: 'waiting', hash, known, started: Date.now() });
     void data.refresh();
   }
@@ -347,10 +400,28 @@ export function Ticket({
         {label}
       </button>
 
+      {showDemo && (
+        <button
+          type="button"
+          className="btn btn-outline btn-block demo-trade"
+          disabled={tx.busy !== null}
+          onClick={() => void demo()}
+        >
+          Try a demo trade
+        </button>
+      )}
+
       <Progress step={guided.step} />
 
       <div className="ticket-status" aria-live="polite">
-        {tx.error && <ErrorLine text={tx.error} />}
+        {demoBusy && (
+          <p className="status-line">
+            <span className="spinner" aria-hidden="true" />
+            Getting test tUSDC, depositing and going long 1 contract…
+          </p>
+        )}
+        {tx.error && demoFailed && <ErrorLine text={tx.error} onRetry={() => void demo()} />}
+        {tx.error && !demoFailed && <ErrorLine text={tx.error} />}
         {data.account.error && guided.step !== 'connect' && !data.account.data && (
           <ErrorLine text={data.account.error} onRetry={() => void data.refresh()} />
         )}
