@@ -1,7 +1,7 @@
 /**
  * Serverless cron tick. One call does everything the long-running
  * publisher and matcher services do per loop, plus rolling a settled
- * market into the next one: publish the EGSI price, settle past expiry,
+ * market into the next one: publish the Compute Index (CCI) price, settle past expiry,
  * roll once settled, then match crossing orders. Every step is try/caught
  * on its own so one failure never blocks the others; failures are reported
  * in `TickReport.errors` (messages only, never keys).
@@ -17,7 +17,7 @@ import { toOraclePrice } from './publisher.js';
 
 const TGAS_30 = '30000000000000';
 const PAGE_SIZE = 100;
-const MIN_UPDATE_AGE_MS = 20_000;
+const MIN_UPDATE_AGE_MS = 60_000;
 const MIN_MARKET_LIFE_MS = 10 * 60_000;
 const HOUR_MS = 60 * 60_000;
 
@@ -33,10 +33,9 @@ export interface TickContext {
   config: NearAdapterConfig;
   contractId: string;
   signer: Pick<Account, 'callFunction'>;
-  /** Base URL of the AI service (serves GET /egsi/current). */
-  aiUrl: string;
+  /** Current Compute Index level, or null when unavailable. */
+  getPrice: () => Promise<number | null>;
   now?: () => number;
-  fetchImpl?: typeof fetch;
   view?: ViewFn;
 }
 
@@ -76,7 +75,6 @@ function message(err: unknown): string {
 export async function runTick(ctx: TickContext): Promise<TickReport> {
   const now = ctx.now ?? Date.now;
   const view: ViewFn = ctx.view ?? viewCall;
-  const fetchImpl = ctx.fetchImpl ?? fetch;
   const report: TickReport = { matched: [], errors: [] };
 
   const call = (methodName: string, args: Record<string, unknown>) =>
@@ -101,17 +99,14 @@ export async function runTick(ctx: TickContext): Promise<TickReport> {
     report.errors.push(`get_market: ${message(err)}`);
   }
 
-  // 2. Publish the EGSI score (skipped if the last update is fresh).
+  // 2. Publish the CCI level (skipped if the last update is fresh).
   if (oracle) {
     try {
       const fresh = oracle.has_price && now() - oracle.last_update_ms < MIN_UPDATE_AGE_MS;
       if (!fresh) {
-        const res = await fetchImpl(`${ctx.aiUrl.replace(/\/$/, '')}/egsi/current`);
-        if (!res.ok) throw new Error(`ai service returned HTTP ${res.status}`);
-        const body = (await res.json()) as { score?: number };
-        const price =
-          typeof body.score === 'number' ? toOraclePrice(body.score, oracle.max_price) : null;
-        if (price === null) throw new Error('ai service returned no usable score');
+        const level = await ctx.getPrice();
+        const price = level === null ? null : toOraclePrice(level, oracle.max_price);
+        if (price === null) throw new Error('no usable index level');
         await call('update_price', { price });
         report.published = price;
       }

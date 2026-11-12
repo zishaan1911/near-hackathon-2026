@@ -23,6 +23,7 @@ interface Setup {
   orders?: unknown[];
   failMethods?: string[];
   viewFailures?: string[];
+  price?: number | null;
 }
 
 function makeCtx(setup: Setup = {}) {
@@ -44,11 +45,9 @@ function makeCtx(setup: Setup = {}) {
   const ctx: TickContext = {
     config,
     contractId: 'gasx.testnet',
-    aiUrl: 'http://ai.invalid/',
+    getPrice: async () => ('price' in setup ? (setup.price ?? null) : 412.6),
     now: () => NOW,
     view,
-    fetchImpl: (async () =>
-      new Response(JSON.stringify({ score: 412.6 }), { status: 200 })) as typeof fetch,
     signer: {
       callFunction: async (params: { methodName: string; args?: Record<string, unknown> }) => {
         if (setup.failMethods?.includes(params.methodName)) {
@@ -104,6 +103,32 @@ describe('runTick', () => {
     const report = await runTick(ctx);
     expect(report.published).toBeUndefined();
     expect(calls.some((c) => c.methodName === 'update_price')).toBe(false);
+  });
+
+  it('publishes the price from getPrice, clamped to max_price', async () => {
+    const { ctx, calls } = makeCtx({ price: 5000 });
+    const report = await runTick(ctx);
+    expect(report.published).toBe(1000);
+    expect(calls[0]).toEqual({ methodName: 'update_price', args: { price: 1000 } });
+  });
+
+  it('uses a 60 s freshness window', async () => {
+    const fresh = makeCtx({ oracle: { last_update_ms: NOW - 59_000 } });
+    await runTick(fresh.ctx);
+    expect(fresh.calls.some((c) => c.methodName === 'update_price')).toBe(false);
+
+    const stale = makeCtx({ oracle: { last_update_ms: NOW - 61_000 } });
+    await runTick(stale.ctx);
+    expect(stale.calls.some((c) => c.methodName === 'update_price')).toBe(true);
+  });
+
+  it('reports an error and skips publishing on a null price', async () => {
+    const { ctx, calls } = makeCtx({ price: null, orders: crossing });
+    const report = await runTick(ctx);
+    expect(report.published).toBeUndefined();
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('publish');
+    expect(calls.map((c) => c.methodName)).toEqual(['match_orders']);
   });
 
   it('a failing step does not stop the others', async () => {

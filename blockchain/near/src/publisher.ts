@@ -1,6 +1,7 @@
 /**
  * Oracle publisher service. Every GASX_PUBLISH_INTERVAL_SECONDS it reads the
- * latest EGSI score from the AI service (GET /egsi/current), converts it to
+ * latest Compute Index level from the gateway (GET /api/v1/indices/compute,
+ * `index.level`; base URL in GASX_PUBLISH_API_URL), converts it to
  * an integer oracle price and submits `update_price` from the publisher
  * account. Once the market is past expiry it also calls the permissionless
  * `settle_market` each tick until the market is settled.
@@ -29,7 +30,7 @@ function log(message: string, fields: Record<string, unknown> = {}): void {
 }
 
 /**
- * Converts an EGSI score into the integer the contract accepts: rounded to
+ * Converts an index level into the integer the contract accepts: rounded to
  * the nearest integer and clamped to [0, maxPrice]. Returns null for a score
  * that is not a finite, non-negative number (the caller skips the tick).
  */
@@ -46,24 +47,25 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-async function fetchScore(aiUrl: string): Promise<number | null> {
-  const res = await fetch(`${aiUrl.replace(/\/$/, '')}/egsi/current`);
+async function fetchScore(apiUrl: string): Promise<number | null> {
+  const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/v1/indices/compute`);
   if (!res.ok) {
-    log('ai service returned an error', { status: res.status });
+    log('index endpoint returned an error', { status: res.status });
     return null;
   }
-  const body = (await res.json()) as { score?: number };
-  return typeof body.score === 'number' ? body.score : null;
+  const body = (await res.json()) as { index?: { level?: number | null } };
+  const level = body.index?.level;
+  return typeof level === 'number' ? level : null;
 }
 
 async function tick(
   contractId: string,
-  aiUrl: string,
+  apiUrl: string,
   config: ReturnType<typeof loadConfigFromEnv>,
   publisher: ReturnType<typeof createSigner>,
 ): Promise<void> {
   const oracle = await viewCall<OracleViewLike>(config, contractId, 'get_oracle', {});
-  const score = await fetchScore(aiUrl);
+  const score = await fetchScore(apiUrl);
   const price = score === null ? null : toOraclePrice(score, oracle.max_price);
   if (price === null) {
     log('skipping publish: no usable score', { score });
@@ -94,7 +96,7 @@ async function tick(
 async function main(): Promise<void> {
   const contractId = process.env.GASX_NEAR_CONTRACT_ID;
   if (!contractId) throw new Error('GASX_NEAR_CONTRACT_ID is required (see .env.example)');
-  const aiUrl = process.env.GASX_PUBLISH_AI_URL || 'http://ai:8000';
+  const apiUrl = process.env.GASX_PUBLISH_API_URL || 'http://localhost:3000';
   const intervalMs = envNumber('GASX_PUBLISH_INTERVAL_SECONDS', 60) * 1000;
 
   const config = loadConfigFromEnv();
@@ -102,11 +104,11 @@ async function main(): Promise<void> {
     'GASX_NEAR_PUBLISHER_ACCOUNT_ID',
     'GASX_NEAR_PUBLISHER_PRIVATE_KEY',
   );
-  log('started', { contractId, aiUrl, intervalMs, publisher: publisher.accountId });
+  log('started', { contractId, apiUrl, intervalMs, publisher: publisher.accountId });
 
   for (;;) {
     try {
-      await tick(contractId, aiUrl, config, publisher);
+      await tick(contractId, apiUrl, config, publisher);
     } catch (err) {
       log('tick failed', { error: (err as Error).message });
     }
