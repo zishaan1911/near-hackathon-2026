@@ -2,9 +2,11 @@
  * Market routes for the hourly Silica Compute Index (SCI) future:
  *   GET /api/v1/market   on-chain market state + live SCI level, pillars,
  *                        on-chain depth and an indicative quote
- *   GET /api/v1/candles  OHLC buckets of the persisted SCI levels
+ *   GET /api/v1/candles  OHLC buckets of the persisted SCI levels; without a
+ *                        database, of the real back-cast + on-chain settlements
  */
 import type { FastifyInstance } from 'fastify';
+import { buildFallbackCandles, resolveHistorySources } from '../compute/historySources.js';
 import type { GatewayDeps } from '../server.js';
 
 const MARKET_ID = 'SCI-1H';
@@ -14,11 +16,20 @@ export function registerMarketRoutes(app: FastifyInstance, deps: GatewayDeps): v
   app.get<{ Querystring: { interval?: string; limit?: string } }>(
     '/api/v1/candles',
     async (request, reply) => {
-      if (!deps.db) {
-        return reply.status(503).send({ error: 'no database configured; see database/README.md' });
-      }
       const interval = Number.parseInt(request.query.interval ?? '300', 10);
       const limit = Number.parseInt(request.query.limit ?? '200', 10);
+      if (!deps.db) {
+        // No database: build candles from the combined real series.
+        const sources = resolveHistorySources(deps);
+        const [backcast, settlements] = await Promise.all([
+          sources.getBackcast(90).catch(() => ({ points: [] })),
+          sources.getSettlements().catch(() => []),
+        ]);
+        const safeInterval = Number.isFinite(interval) ? Math.max(1, interval) : 300;
+        const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(5000, limit)) : 200;
+        const candles = buildFallbackCandles(backcast.points, settlements, safeInterval, safeLimit);
+        return { market: MARKET_ID, interval: safeInterval, count: candles.length, candles, source: 'backcast+settlements' as const };
+      }
       const candles = await deps.db.getComputeIndexCandles(
         Number.isFinite(interval) ? interval : 300,
         Number.isFinite(limit) ? limit : 200,

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Fastify app factory. Takes dependencies as plain constructor
  * arguments (GatewayDeps) rather than reaching for globals, so tests can
  * inject fakes implementing ChainAdapter and
@@ -8,6 +8,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { ChainAdapter } from '@gasx/near-adapter';
 import type { CciResponse } from './compute/service.js';
+import type { HistorySources } from './compute/historySources.js';
 import type { Database } from './db.js';
 import type { EngineLayer } from './engineLayer.js';
 import type { RiskPolicyConfig } from './riskPolicy.js';
@@ -35,6 +36,8 @@ export interface GatewayDeps {
   db?: Database | null;
   /** Cron tick wiring. Omitted, the tick route is not registered. */
   tick?: TickRouteDeps | null;
+  /** Real database-free history (back-cast, on-chain settlements). Built on demand from the other deps when omitted. */
+  historySources?: HistorySources | null;
   /** Defaults to true. Tests pass false to keep output clean. */
   logger?: boolean;
 }

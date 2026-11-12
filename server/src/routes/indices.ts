@@ -1,14 +1,14 @@
 /**
  * Silica Compute Index (SCI) routes:
  *   GET  /api/v1/indices/compute          current level + components + GPU view
- *   GET  /api/v1/indices/compute/history  persisted levels + real backfill
+ *   GET  /api/v1/indices/compute/history  persisted levels + real backfill + back-cast + on-chain settlements
  *   GET|POST /api/v1/cron/compute-snapshot  records a snapshot (bearer CRON_SECRET)
  * Component failures are reported per component; the routes never throw on
  * upstream trouble.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createBackfillSource } from '../compute/history.js';
+import { resolveHistorySources } from '../compute/historySources.js';
 import { METHODOLOGY_VERSION } from '../compute/service.js';
 import type { FetchImpl } from '../compute/types.js';
 import type { GatewayDeps } from '../server.js';
@@ -51,11 +51,7 @@ export function registerIndicesRoutes(
   // The compute service is shared (built once in app.ts) so every consumer
   // hits the same cache.
   const getCci = deps.getCci;
-  const getBackfill = createBackfillSource({
-    fetchImpl,
-    ...(opts.now ? { now: opts.now } : {}),
-    ...(ethRpcUrl ? { rpcUrl: ethRpcUrl } : {}),
-  });
+  const sources = resolveHistorySources(deps, { fetchImpl, rpcUrl: ethRpcUrl, now: opts.now });
 
   app.get('/api/v1/indices/compute', async (_request, reply) => {
     const body = await getCci();
@@ -65,13 +61,15 @@ export function registerIndicesRoutes(
   app.get('/api/v1/indices/compute/history', async (request, reply) => {
     const days = clampDays((request.query as Record<string, unknown> | undefined)?.days);
     const db = deps.db ?? null;
-    const [points, backfill] = await Promise.all([
+    const [points, backfill, backcast, settlements] = await Promise.all([
       db ? db.getComputeIndexHistory(days) : Promise.resolve([]),
-      getBackfill(days),
+      sources.getBackfill(days),
+      sources.getBackcast(days),
+      sources.getSettlements().catch(() => []),
     ]);
     return reply
       .header('Cache-Control', HISTORY_CACHE_CONTROL)
-      .send({ persisted: db !== null, points, backfill });
+      .send({ persisted: db !== null, points, backfill, backcast, settlements });
   });
 
   const cronHandler = async (request: FastifyRequest, reply: FastifyReply) => {
