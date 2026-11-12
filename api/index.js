@@ -18654,17 +18654,17 @@ var require_fast_uri = __commonJS({
       if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
         throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
       }
-      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
-      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
-      const resolvedHost = resolved.host;
+      const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
+      const resolvedHost = resolved2.host;
       const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+      canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
-      if (resolved.error && !encodedASCIIHost) {
-        throw new Error(resolved.error);
+      if (resolved2.error && !encodedASCIIHost) {
+        throw new Error(resolved2.error);
       }
       schemelessOptions.skipEscape = true;
-      return serialize2(resolved, schemelessOptions);
+      return serialize2(resolved2, schemelessOptions);
     }
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
@@ -24362,17 +24362,17 @@ var require_fast_uri2 = __commonJS({
       if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
         throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
       }
-      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
-      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
-      const resolvedHost = resolved.host;
+      const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
+      const resolvedHost = resolved2.host;
       const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+      canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
-      if (resolved.error && !encodedASCIIHost) {
-        throw new Error(resolved.error);
+      if (resolved2.error && !encodedASCIIHost) {
+        throw new Error(resolved2.error);
       }
       schemelessOptions.skipEscape = true;
-      return serialize2(resolved, schemelessOptions);
+      return serialize2(resolved2, schemelessOptions);
     }
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
@@ -37910,6 +37910,26 @@ function parseTradeViews(views) {
     throw new Error(`expected a TradeView array, got ${JSON.stringify(views)}`);
   return views.map(parseTradeView);
 }
+async function fetchMarketSummary(config2, marketNumber) {
+  let view;
+  try {
+    view = await viewCall(config2, config2.contractId, "get_market", { market_id: marketNumber });
+  } catch (err) {
+    if (err instanceof Error && /failed:/.test(err.message))
+      return null;
+    throw err;
+  }
+  if (view === null || view === void 0)
+    return null;
+  const m = parseMarketView(view, config2.contractId);
+  return {
+    marketNumber,
+    underlying: m.underlying,
+    expiryMs: m.expiryMs,
+    settled: m.settled,
+    settlementPrice: m.settlementPrice
+  };
+}
 async function fetchMarketState(config2) {
   const [marketView, oracleView] = await Promise.all([
     viewCall(config2, config2.contractId, "get_market", {}),
@@ -37947,6 +37967,11 @@ var NearChainAdapter = class {
   }
   getMarketState() {
     return this.config.devMarket ? Promise.resolve(fetchDevMarketState(this.config)) : fetchMarketState(this.config);
+  }
+  async getMarketById(marketNumber) {
+    if (this.config.devMarket)
+      return null;
+    return fetchMarketSummary(this.config, marketNumber);
   }
   async getAccount(accountId) {
     if (this.config.devMarket)
@@ -52026,6 +52051,57 @@ var BACKFILL_TTL_MS = 36e5;
 var HASH_RATE_URL = "https://api.blockchain.info/charts/hash-rate?timespan=90days&format=json";
 var MARKET_PRICE_URL = "https://api.blockchain.info/charts/market-price?timespan=90days&format=json";
 var SIX_HOURS_BLOCKS = 1800;
+var DAY_MS = 864e5;
+var ETH_DAILY_URL = "https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=120&interval=daily";
+function pricesByDate(body) {
+  const out = /* @__PURE__ */ new Map();
+  const prices = isRecord(body) ? body.prices : void 0;
+  if (!Array.isArray(prices)) return out;
+  for (const p of prices) {
+    if (!Array.isArray(p)) continue;
+    const ms = num(p[0]);
+    const usd = num(p[1]);
+    if (ms === null || usd === null || usd <= 0) continue;
+    out.set(new Date(ms).toISOString().slice(0, 10), usd);
+  }
+  return out;
+}
+function backcastSampleCount(days, nowMs, baseDate) {
+  const sinceBase = Math.max(0, Math.ceil((nowMs - Date.parse(`${baseDate}T00:00:00.000Z`)) / DAY_MS));
+  return Math.min(480, (days + 7 + sinceBase + 1) * 4);
+}
+function createMarketDataSource(opts) {
+  const cache = /* @__PURE__ */ new Map();
+  async function build(count) {
+    const dailyP = fetchJson(opts.fetchImpl, ETH_DAILY_URL).then((b2) => {
+      const m = pricesByDate(b2);
+      return m.size > 0 ? m : null;
+    }).catch(() => null);
+    const currentP = fetchEthUsd(opts.fetchImpl, opts.rpcUrl).then((e) => e.price).catch(() => null);
+    const latest = await fetchBlockNumber(opts.fetchImpl, opts.rpcUrl);
+    const [fees, ethDaily, ethCurrent] = await Promise.all([
+      fetchBaseFees(opts.fetchImpl, opts.rpcUrl, sampleBlockNumbers(latest, SIX_HOURS_BLOCKS, count)),
+      dailyP,
+      currentP
+    ]);
+    if (ethDaily === null && ethCurrent === null) throw new Error("no ETH/USD price available");
+    return { fees, ethDaily, ethCurrent };
+  }
+  return (count) => {
+    const hit = cache.get(count);
+    if (hit && opts.now() - hit.at < opts.ttlMs) return hit.value;
+    const value = build(count);
+    const entry = { at: opts.now(), value };
+    cache.set(count, entry);
+    value.catch(() => {
+      if (cache.get(count) === entry) cache.delete(count);
+    });
+    return value;
+  };
+}
+function utcDate(unixSeconds) {
+  return new Date(unixSeconds * 1e3).toISOString().slice(0, 10);
+}
 function chartByDate(body) {
   const out = /* @__PURE__ */ new Map();
   const values2 = isRecord(body) ? body.values : void 0;
@@ -52058,16 +52134,16 @@ function createBackfillSource(opts) {
     const [hr, mp] = await Promise.all([fetchJson(opts.fetchImpl, HASH_RATE_URL), fetchJson(opts.fetchImpl, MARKET_PRICE_URL)]);
     return joinHashprice(chartByDate(hr), chartByDate(mp), days, now());
   }
+  const marketData = opts.marketData ?? createMarketDataSource({ fetchImpl: opts.fetchImpl, rpcUrl, now, ttlMs: ttl });
   async function blockspaceSeries(days) {
-    const latest = await fetchBlockNumber(opts.fetchImpl, rpcUrl);
-    const [fees, eth] = await Promise.all([
-      fetchBaseFees(opts.fetchImpl, rpcUrl, sampleBlockNumbers(latest, SIX_HOURS_BLOCKS, days * 4)),
-      fetchEthUsd(opts.fetchImpl, rpcUrl)
-    ]);
-    return fees.map((f) => ({
-      t: new Date(f.timestamp * 1e3).toISOString(),
-      value: usdPerMillionGas(f.gwei, eth.price)
-    }));
+    const md = await marketData(backcastSampleCount(days, now(), BASE_DATE));
+    const out = [];
+    for (const f of md.fees.slice(-days * 4)) {
+      const usd = md.ethDaily?.get(utcDate(f.timestamp)) ?? md.ethCurrent;
+      if (usd === null || usd === void 0) continue;
+      out.push({ t: new Date(f.timestamp * 1e3).toISOString(), value: usdPerMillionGas(f.gwei, usd) });
+    }
+    return out;
   }
   async function build(days) {
     const [h, b2] = await Promise.allSettled([hashSeries(days), blockspaceSeries(days)]);
@@ -52087,6 +52163,206 @@ function createBackfillSource(opts) {
     });
     return value;
   };
+}
+
+// src/compute/backcast.ts
+var weightOf = (id2) => COMPONENT_META.find((c) => c.id === id2)?.nominalWeight ?? 0;
+var BTC_WEIGHT = weightOf("btc_hashprice");
+var BLOCKSPACE_WEIGHT = weightOf("blockspace");
+var BACKCAST_TTL_MS = 36e5;
+var BACKCAST_METHOD = "Daily SCI level re-computed from only the two pillars with public history (Bitcoin hashprice at 10% and Ethereum blockspace at 5% weight), with the other four pillars held at their base values, so it shows how those two pillars alone would have moved the index; it is not the full index.";
+var WINDOW_DAYS = 7;
+var MIN_WINDOW_SAMPLES = 14;
+var DAY_MS2 = 864e5;
+var HASH_RATE_URL2 = "https://api.blockchain.info/charts/hash-rate?timespan=130days&format=json";
+var MARKET_PRICE_URL2 = "https://api.blockchain.info/charts/market-price?timespan=130days&format=json";
+function rollingMedianGwei(fees, date) {
+  const end = Date.parse(`${date}T00:00:00.000Z`) + DAY_MS2;
+  const start = end - WINDOW_DAYS * DAY_MS2;
+  const inWindow = fees.filter((f) => f.timestamp * 1e3 >= start && f.timestamp * 1e3 < end).map((f) => f.gwei);
+  return inWindow.length >= MIN_WINDOW_SAMPLES ? median(inWindow) : null;
+}
+function backcastLevel(hash, hashBase, gas, gasBase) {
+  return INDEX_BASE * Math.pow(hash / hashBase, BTC_WEIGHT) * Math.pow(gas / gasBase, BLOCKSPACE_WEIGHT);
+}
+function addDays(date, delta) {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + delta * DAY_MS2).toISOString().slice(0, 10);
+}
+function buildBackcast(input) {
+  const baseDate = input.baseDate ?? BASE_DATE;
+  const daily = input.ethDaily !== null && input.ethDaily.size > 0;
+  const result = { points: [], method: BACKCAST_METHOD, pillars: ["btc_hashprice", "blockspace"], ethPrice: daily ? "daily" : "current" };
+  const gasUsd = (date) => {
+    const gwei = rollingMedianGwei(input.fees, date);
+    const eth = daily ? input.ethDaily?.get(date) : input.ethCurrent;
+    if (gwei === null || eth === void 0 || eth === null) return null;
+    return usdPerMillionGas(gwei, eth);
+  };
+  const hashBase = input.hashprice.get(baseDate);
+  const gasBase = gasUsd(baseDate);
+  if (hashBase === void 0 || gasBase === null) return result;
+  for (let d = -input.days; d <= 0; d++) {
+    const date = addDays(baseDate, d);
+    const h = input.hashprice.get(date);
+    const g = gasUsd(date);
+    if (h === void 0 || g === null) continue;
+    result.points.push({ t: `${date}T00:00:00.000Z`, level: backcastLevel(h, hashBase, g, gasBase) });
+  }
+  return result;
+}
+function createBackcastSource(opts) {
+  const rpcUrl = opts.rpcUrl ?? DEFAULT_ETH_RPC_URL;
+  const now = opts.now ?? (() => Date.now());
+  const ttl = opts.ttlMs ?? BACKCAST_TTL_MS;
+  const marketData = opts.marketData ?? createMarketDataSource({ fetchImpl: opts.fetchImpl, rpcUrl, now, ttlMs: ttl });
+  const cache = /* @__PURE__ */ new Map();
+  async function build(days) {
+    const [hr, mp, md] = await Promise.all([
+      fetchJson(opts.fetchImpl, HASH_RATE_URL2),
+      fetchJson(opts.fetchImpl, MARKET_PRICE_URL2),
+      marketData(backcastSampleCount(days, now(), BASE_DATE))
+    ]);
+    const rate = chartByDate(hr);
+    const price = chartByDate(mp);
+    const hp = /* @__PURE__ */ new Map();
+    for (const [date, th] of rate) {
+      const usd = price.get(date);
+      if (usd !== void 0) hp.set(date, hashprice(usd, th));
+    }
+    return buildBackcast({ hashprice: hp, fees: md.fees, ethDaily: md.ethDaily, ethCurrent: md.ethCurrent, days });
+  }
+  const empty = () => ({ points: [], method: BACKCAST_METHOD, pillars: ["btc_hashprice", "blockspace"], ethPrice: "current" });
+  return (days) => {
+    const hit = cache.get(days);
+    if (hit && now() - hit.at < ttl) return hit.value;
+    const value = build(days).catch(empty);
+    const entry = { at: now(), value };
+    cache.set(days, entry);
+    void value.then((v) => {
+      if (v.points.length === 0 && cache.get(days) === entry) cache.delete(days);
+    });
+    return value;
+  };
+}
+
+// src/compute/settlements.ts
+var SETTLEMENT_RECHECK_MS = 6e4;
+var CONCURRENCY = 8;
+function marketNumberOf(marketId) {
+  const m = /#(\d+)$/.exec(marketId);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+function isHourlyIndexMarket(underlying) {
+  return underlying.endsWith("CI-1H");
+}
+function createSettlementReader(opts) {
+  const now = opts.now ?? (() => Date.now());
+  const recheck = opts.recheckMs ?? SETTLEMENT_RECHECK_MS;
+  const settled = /* @__PURE__ */ new Map();
+  const ignored = /* @__PURE__ */ new Set();
+  let lastPass = -Infinity;
+  let inflight = null;
+  const sorted = () => [...settled.values()].sort((a, b2) => a.t.localeCompare(b2.t) || a.marketId - b2.marketId);
+  async function pass() {
+    lastPass = now();
+    const getById = opts.chain.getMarketById?.bind(opts.chain);
+    if (!getById) return sorted();
+    let current;
+    try {
+      current = marketNumberOf((await opts.chain.getMarketState()).marketId);
+    } catch {
+      return sorted();
+    }
+    if (current === null) return sorted();
+    const todo = [];
+    for (let id2 = 1; id2 <= current; id2++) if (!settled.has(id2) && !ignored.has(id2)) todo.push(id2);
+    let next = 0;
+    async function worker() {
+      while (next < todo.length) {
+        const id2 = todo[next++];
+        try {
+          const m = await getById(id2);
+          if (!m) continue;
+          if (!isHourlyIndexMarket(m.underlying)) ignored.add(id2);
+          else if (m.settled && m.settlementPrice !== null) {
+            settled.set(id2, { t: new Date(m.expiryMs).toISOString(), level: m.settlementPrice, marketId: id2 });
+          }
+        } catch {
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
+    return sorted();
+  }
+  return async () => {
+    if (inflight) return inflight;
+    if (now() - lastPass < recheck) return sorted();
+    inflight = pass().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
+}
+
+// src/compute/historySources.ts
+function createHistorySources(opts) {
+  const now = opts.now ?? (() => Date.now());
+  const rpcUrl = opts.rpcUrl ?? DEFAULT_ETH_RPC_URL;
+  const marketData = createMarketDataSource({ fetchImpl: opts.fetchImpl, rpcUrl, now, ttlMs: 36e5 });
+  const getBackfill = createBackfillSource({ fetchImpl: opts.fetchImpl, rpcUrl, now, marketData });
+  const getBackcast = createBackcastSource({ fetchImpl: opts.fetchImpl, rpcUrl, now, marketData });
+  const reader = opts.chain ? createSettlementReader({ chain: opts.chain, now }) : async () => [];
+  return { getBackfill, getBackcast, getSettlements: () => reader() };
+}
+function buildFallbackCandles(backcast, settlements, intervalSeconds, limit) {
+  const byTime = /* @__PURE__ */ new Map();
+  let prevClose = null;
+  for (const p of [...backcast].sort((a, b2) => a.t.localeCompare(b2.t))) {
+    const open = prevClose ?? p.level;
+    byTime.set(Math.floor(Date.parse(p.t) / 1e3), {
+      time: Math.floor(Date.parse(p.t) / 1e3),
+      open,
+      high: Math.max(open, p.level),
+      low: Math.min(open, p.level),
+      close: p.level,
+      samples: 1
+    });
+    prevClose = p.level;
+  }
+  const step = Math.max(1, Math.trunc(intervalSeconds));
+  const buckets = /* @__PURE__ */ new Map();
+  for (const s of [...settlements].sort((a, b2) => a.t.localeCompare(b2.t) || a.marketId - b2.marketId)) {
+    const time = Math.floor(Math.floor(Date.parse(s.t) / 1e3) / step) * step;
+    const c = buckets.get(time);
+    if (!c) buckets.set(time, { time, open: s.level, high: s.level, low: s.level, close: s.level, samples: 1 });
+    else {
+      c.high = Math.max(c.high, s.level);
+      c.low = Math.min(c.low, s.level);
+      c.close = s.level;
+      c.samples += 1;
+    }
+  }
+  for (const [time, c] of buckets) byTime.set(time, c);
+  const all = [...byTime.values()].sort((a, b2) => a.time - b2.time);
+  const n = Math.max(1, Math.trunc(limit));
+  return all.slice(-n);
+}
+var resolved = /* @__PURE__ */ new WeakMap();
+function resolveHistorySources(deps, opts = {}) {
+  if (deps.historySources) return deps.historySources;
+  let r = resolved.get(deps);
+  if (!r) {
+    r = createHistorySources({
+      fetchImpl: opts.fetchImpl ?? ((input, init) => fetch(input, init)),
+      chain: deps.chainAdapter,
+      rpcUrl: opts.rpcUrl ?? (process.env.GASX_ETH_RPC_URL || void 0),
+      now: opts.now
+    });
+    resolved.set(deps, r);
+  }
+  return r;
 }
 
 // src/routes/indices.ts
@@ -52110,11 +52386,7 @@ function registerIndicesRoutes(app, deps, opts = {}) {
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   const ethRpcUrl = env.GASX_ETH_RPC_URL || void 0;
   const getCci = deps.getCci;
-  const getBackfill = createBackfillSource({
-    fetchImpl,
-    ...opts.now ? { now: opts.now } : {},
-    ...ethRpcUrl ? { rpcUrl: ethRpcUrl } : {}
-  });
+  const sources = resolveHistorySources(deps, { fetchImpl, rpcUrl: ethRpcUrl, now: opts.now });
   app.get("/api/v1/indices/compute", async (_request, reply) => {
     const body = await getCci();
     return reply.header("Cache-Control", CURRENT_CACHE_CONTROL).send(body);
@@ -52122,11 +52394,13 @@ function registerIndicesRoutes(app, deps, opts = {}) {
   app.get("/api/v1/indices/compute/history", async (request, reply) => {
     const days = clampDays(request.query?.days);
     const db = deps.db ?? null;
-    const [points, backfill] = await Promise.all([
+    const [points, backfill, backcast, settlements] = await Promise.all([
       db ? db.getComputeIndexHistory(days) : Promise.resolve([]),
-      getBackfill(days)
+      sources.getBackfill(days),
+      sources.getBackcast(days),
+      sources.getSettlements().catch(() => [])
     ]);
-    return reply.header("Cache-Control", HISTORY_CACHE_CONTROL).send({ persisted: db !== null, points, backfill });
+    return reply.header("Cache-Control", HISTORY_CACHE_CONTROL).send({ persisted: db !== null, points, backfill, backcast, settlements });
   });
   const cronHandler = async (request, reply) => {
     const secret = (opts.env ?? process.env).CRON_SECRET;
@@ -52154,11 +52428,19 @@ function registerMarketRoutes(app, deps) {
   app.get(
     "/api/v1/candles",
     async (request, reply) => {
-      if (!deps.db) {
-        return reply.status(503).send({ error: "no database configured; see database/README.md" });
-      }
       const interval = Number.parseInt(request.query.interval ?? "300", 10);
       const limit = Number.parseInt(request.query.limit ?? "200", 10);
+      if (!deps.db) {
+        const sources = resolveHistorySources(deps);
+        const [backcast, settlements] = await Promise.all([
+          sources.getBackcast(90).catch(() => ({ points: [] })),
+          sources.getSettlements().catch(() => [])
+        ]);
+        const safeInterval = Number.isFinite(interval) ? Math.max(1, interval) : 300;
+        const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(5e3, limit)) : 200;
+        const candles2 = buildFallbackCandles(backcast.points, settlements, safeInterval, safeLimit);
+        return { market: MARKET_ID, interval: safeInterval, count: candles2.length, candles: candles2, source: "backcast+settlements" };
+      }
       const candles = await deps.db.getComputeIndexCandles(
         Number.isFinite(interval) ? interval : 300,
         Number.isFinite(limit) ? limit : 200
