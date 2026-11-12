@@ -37925,7 +37925,7 @@ async function fetchMarketState(config2) {
 // ../blockchain/near/dist/nearAdapter.js
 var DevMarketUnavailableError = class extends Error {
   constructor() {
-    super("The gasx contract is not deployed \u2014 running in dev-market mode. Orders need GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN set (see blockchain/near/.env.example).");
+    super("The Silica contract is not deployed \u2014 running in dev-market mode. Orders need GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN set (see blockchain/near/.env.example).");
     this.name = "DevMarketUnavailableError";
   }
 };
@@ -37942,7 +37942,7 @@ var NearChainAdapter = class {
   constructor(config2) {
     this.config = config2;
     if (config2.devMarket) {
-      console.warn("[gasx/near-adapter] dev-market mode: serving a synthetic market; no transactions can be prepared. Set GASX_NEAR_DEV_MARKET=false once deployed.");
+      console.warn("[silica/near-adapter] dev-market mode: serving a synthetic market; no transactions can be prepared. Set GASX_NEAR_DEV_MARKET=false once deployed.");
     }
   }
   getMarketState() {
@@ -48319,7 +48319,7 @@ var import_meta = {};
 var TGAS_30 = "30000000000000";
 var PAGE_SIZE = 100;
 function log(message2, fields = {}) {
-  console.log(`[gasx/matcher] ${message2} ${JSON.stringify(fields)}`);
+  console.log(`[silica/matcher] ${message2} ${JSON.stringify(fields)}`);
 }
 function findMatches(orders) {
   const bids = orders.filter((o) => o.is_bid).sort((a, b2) => b2.price - a.price || a.order_id - b2.order_id);
@@ -48411,7 +48411,7 @@ var import_node_url2 = require("node:url");
 var import_meta2 = {};
 var TGAS_302 = "30000000000000";
 function log3(message2, fields = {}) {
-  console.log(`[gasx/publisher] ${message2} ${JSON.stringify(fields)}`);
+  console.log(`[silica/publisher] ${message2} ${JSON.stringify(fields)}`);
 }
 function toOraclePrice(score, maxPrice) {
   if (typeof score !== "number" || !Number.isFinite(score) || score < 0)
@@ -48496,6 +48496,8 @@ var PAGE_SIZE2 = 100;
 var MIN_UPDATE_AGE_MS = 6e4;
 var MIN_MARKET_LIFE_MS = 10 * 6e4;
 var HOUR_MS = 60 * 6e4;
+var STOP_BEFORE_EXPIRY_MS = 6e4;
+var MAX_CLAIMS_PER_TICK = 5;
 function nextExpiryMs(nowMs) {
   const earliest = nowMs + MIN_MARKET_LIFE_MS;
   return (Math.floor(earliest / HOUR_MS) + 1) * HOUR_MS;
@@ -48562,23 +48564,146 @@ async function runTick(ctx) {
       report.errors.push(`roll: ${message(err)}`);
     }
   }
-  try {
-    let current = market;
-    if (rolledOk) {
+  let current = market;
+  if (rolledOk) {
+    try {
       current = await view(ctx.config, ctx.contractId, "get_market", {});
+    } catch (err) {
+      current = null;
+      report.errors.push(`match: ${message(err)}`);
     }
-    if (current && !current.paused && !current.settled && now() < current.expiry_ms) {
-      const orders = [];
-      for (let from = 0; ; from += PAGE_SIZE2) {
-        const page = await view(ctx.config, ctx.contractId, "get_open_orders", {
-          from_index: from,
-          limit: PAGE_SIZE2
-        });
-        orders.push(...page);
-        if (page.length < PAGE_SIZE2)
-          break;
+  }
+  const tradable = !!current && !current.paused && !current.settled && now() < current.expiry_ms;
+  const pageAll = async (method, args) => {
+    const all = [];
+    for (let from = 0; ; from += PAGE_SIZE2) {
+      const page = await view(ctx.config, ctx.contractId, method, {
+        ...args,
+        from_index: from,
+        limit: PAGE_SIZE2
+      });
+      all.push(...page);
+      if (page.length < PAGE_SIZE2)
+        break;
+    }
+    return all;
+  };
+  let openOrders = null;
+  let bookChanged = false;
+  const liq = ctx.liquidity;
+  const maker = ctx.signerAccountId;
+  if (liq && maker && current && current.market_id !== void 0) {
+    const currentMarketId = current.market_id;
+    try {
+      const mine = await pageAll("get_orders_by_account", { account_id: maker });
+      for (const o of mine) {
+        if (o.status === "open" && o.market_id !== currentMarketId) {
+          try {
+            await call("cancel_order", { order_id: o.order_id });
+          } catch (err) {
+            report.errors.push(`liquidity: cancel stale ${o.order_id}: ${message(err)}`);
+          }
+        }
       }
-      for (const pair of findMatches(orders)) {
+    } catch (err) {
+      report.errors.push(`liquidity: stale orders: ${message(err)}`);
+    }
+    try {
+      const trades = await pageAll("get_trades_by_account", { account_id: maker });
+      const claimable = trades.filter((tr) => tr.market_id !== currentMarketId && (tr.buyer === maker && !tr.buyer_claimed || tr.seller === maker && !tr.seller_claimed)).slice(0, MAX_CLAIMS_PER_TICK);
+      for (const tr of claimable) {
+        try {
+          await call("claim", { trade_id: tr.trade_id });
+        } catch (err) {
+          report.errors.push(`liquidity: claim ${tr.trade_id}: ${message(err)}`);
+        }
+      }
+    } catch (err) {
+      report.errors.push(`liquidity: trades: ${message(err)}`);
+    }
+    const ref = report.published ?? (oracle?.has_price && oracle.price !== void 0 ? oracle.price : null);
+    const quotable = now() < current.expiry_ms - STOP_BEFORE_EXPIRY_MS;
+    if (tradable && quotable && ref !== null) {
+      try {
+        const tickSize = current.tick_size;
+        const multiplier = current.contract_multiplier;
+        const marginBps = current.margin_ratio_bps;
+        if (!oracle || !tickSize || multiplier === void 0 || marginBps === void 0) {
+          throw new Error("market parameters unavailable");
+        }
+        const maxPrice = Math.floor(oracle.max_price / tickSize) * tickSize;
+        const clamp = (p) => Math.min(Math.max(p, tickSize), maxPrice);
+        const refTick = Math.round(ref / tickSize) * tickSize;
+        const bidTarget = clamp(refTick - liq.offsetTicks * tickSize);
+        const askTarget = clamp(refTick + liq.offsetTicks * tickSize);
+        if (bidTarget >= askTarget)
+          throw new Error("degenerate quotes (bid would reach ask)");
+        openOrders = await pageAll("get_open_orders", {});
+        const mine = openOrders.filter((o) => o.owner === maker);
+        const quoted = { bids: 0, asks: 0 };
+        const toPlace = [];
+        for (const isBid of [true, false]) {
+          const target = isBid ? bidTarget : askTarget;
+          const side = mine.filter((o) => o.is_bid === isBid);
+          const keep = side.find((o) => o.quantity === liq.quantity && Math.abs(o.price - target) <= liq.maxRepriceDistance * tickSize);
+          if (keep) {
+            quoted[isBid ? "bids" : "asks"] += 1;
+            continue;
+          }
+          for (const o of side) {
+            try {
+              await call("cancel_order", { order_id: o.order_id });
+              bookChanged = true;
+            } catch (err) {
+              report.errors.push(`liquidity: cancel ${o.order_id}: ${message(err)}`);
+            }
+          }
+          toPlace.push({ isBid, price: target });
+        }
+        if (toPlace.length > 0) {
+          let available = null;
+          try {
+            const acct = await view(ctx.config, ctx.contractId, "get_account", {
+              account_id: maker
+            });
+            available = BigInt(acct.available);
+          } catch (err) {
+            report.errors.push(`liquidity: get_account: ${message(err)}`);
+          }
+          let insufficient = false;
+          if (available !== null) {
+            for (const q2 of toPlace) {
+              const num2 = BigInt(q2.price) * BigInt(liq.quantity) * BigInt(multiplier) * BigInt(marginBps);
+              const margin = (num2 + 9999n) / 10000n;
+              if (available < margin) {
+                insufficient = true;
+                continue;
+              }
+              try {
+                await call("place_order", { is_bid: q2.isBid, price: q2.price, quantity: liq.quantity });
+                available -= margin;
+                bookChanged = true;
+                quoted[q2.isBid ? "bids" : "asks"] += 1;
+              } catch (err) {
+                report.errors.push(`liquidity: place ${q2.isBid ? "bid" : "ask"}: ${message(err)}`);
+              }
+            }
+          }
+          if (insufficient)
+            report.errors.push("liquidity: insufficient balance");
+        }
+        report.quoted = quoted;
+      } catch (err) {
+        report.errors.push(`liquidity: ${message(err)}`);
+      }
+    }
+  }
+  try {
+    if (tradable) {
+      if (openOrders === null || bookChanged) {
+        openOrders = await pageAll("get_open_orders", {});
+      }
+      for (const pair of findMatches(openOrders)) {
         try {
           await call("match_orders", { buy_order_id: pair.buy, sell_order_id: pair.sell });
           report.matched.push(pair);
@@ -49354,8 +49479,8 @@ function createComputeService(opts) {
     const calc = computeIndex(fetched, opts.baseQuotes ?? BASE_QUOTES, opts.baseValues ?? BASE_VALUES);
     return {
       index: {
-        id: "CCI",
-        name: "Congest Compute Index",
+        id: "SCI",
+        name: "Silica Compute Index",
         level: calc.level,
         base: INDEX_BASE,
         baseDate: BASE_DATE,
@@ -51617,7 +51742,7 @@ var PostgresDatabase = class {
     }
   }
   /**
-   * Buckets CCI snapshots into fixed intervals and derives OHLC per bucket
+   * Buckets SCI snapshots into fixed intervals and derives OHLC per bucket
    * in SQL (open/close are the first/last level by `taken_at`). The query
    * runs newest-first so LIMIT keeps the most recent candles; the result is
    * reversed because charts read oldest-first.
@@ -51823,12 +51948,12 @@ function validateMessages(body) {
 async function buildSystemPrompt(deps) {
   const cci = await deps.getCci().catch(() => null);
   const lines = [
-    "You are Kora, the assistant for Congest, a market for the price of compute. Congest publishes the Congest Compute Index (CCI) and lists an hourly CCI future on NEAR.",
+    "You are Kora, the assistant for Silica. Silica is a market for the price of compute. Silica publishes the Silica Compute Index (SCI) and lists an hourly SCI future (market SCI-1H) on NEAR.",
     "",
     "Key facts about the platform:",
-    "- The CCI is a composite index of what compute costs right now, set to 1000 at its base date. Above 1000 means compute is pricier than at the base date; below 1000 means cheaper.",
+    "- The SCI is a composite index of what compute costs right now, set to 1000 at its base date. Above 1000 means compute is pricier than at the base date; below 1000 means cheaper.",
     "- It has six pillars: GPU rental (Vast.ai, RunPod, Akash), cloud GPU spot prices (AWS, Azure), cloud CPU spot prices (AWS, Azure), AI inference prices (OpenRouter), Bitcoin hashprice, and Ethereum blockspace (a 7-day median of base fees). Each pillar carries a weight; if a pillar is down, the remaining weights are rescaled and the index is flagged as degraded.",
-    "- The hourly CCI future is a one-hour contract on the index level, settled in USDC on NEAR. An oracle account publishes the CCI level on-chain; when the hour ends the contract settles at the last published level and the next hourly market is rolled in. Buyers gain if the CCI settles higher than their entry price, sellers gain if it settles lower.",
+    "- The hourly SCI future is a one-hour contract on the index level, settled in USDC on NEAR. An oracle account publishes the SCI level on-chain; when the hour ends the contract settles at the last published level and the next hourly market is rolled in. Buyers gain if the SCI settles higher than their entry price, sellers gain if it settles lower.",
     "- Order sizes and positions are capped by risk limits enforced in the gateway.",
     "- The quote and depth shown in the order book are indicative; real depth comes from open orders on the NEAR contract.",
     ""
@@ -51836,11 +51961,11 @@ async function buildSystemPrompt(deps) {
   if (cci && cci.index.level !== null) {
     const pillars = cci.components.map((c) => `${c.label}: ${c.status === "ok" && c.level !== null ? Math.round(c.level) : "down"}`).join("; ");
     lines.push(
-      `Current live reading: CCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), as of ${cci.index.asOf}${cci.index.degraded ? ", degraded (some pillars are down)" : ""}.`,
+      `Current live reading: SCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), as of ${cci.index.asOf}${cci.index.degraded ? ", degraded (some pillars are down)" : ""}.`,
       `Pillar levels (1000 = base): ${pillars}.`
     );
   } else {
-    lines.push("No live CCI reading is available right now -- say so rather than guessing a number.");
+    lines.push("No live SCI reading is available right now -- say so rather than guessing a number.");
   }
   lines.push(
     "",
@@ -52024,7 +52149,7 @@ function registerIndicesRoutes(app, deps, opts = {}) {
 }
 
 // src/routes/market.ts
-var MARKET_ID = "CCI-1H";
+var MARKET_ID = "SCI-1H";
 function registerMarketRoutes(app, deps) {
   app.get(
     "/api/v1/candles",
@@ -52193,6 +52318,17 @@ function defaultSigner(env) {
   }
   return createSigner("GASX_NEAR_PUBLISHER_ACCOUNT_ID", "GASX_NEAR_PUBLISHER_PRIVATE_KEY");
 }
+function liquidityContext(env) {
+  if (env.GASX_DEMO_LIQUIDITY !== "true") return {};
+  const accountId = env.GASX_NEAR_PUBLISHER_ACCOUNT_ID;
+  if (!accountId) return {};
+  const qty = Number(env.GASX_DEMO_LIQUIDITY_QUANTITY);
+  const quantity = Number.isInteger(qty) && qty > 0 ? qty : 100;
+  return {
+    signerAccountId: accountId,
+    liquidity: { quantity, offsetTicks: 1, maxRepriceDistance: 3 }
+  };
+}
 function registerTickRoute(app, deps) {
   const now = deps.now ?? Date.now;
   const run = deps.runTick ?? runTick;
@@ -52208,7 +52344,8 @@ function registerTickRoute(app, deps) {
         config: deps.config,
         contractId: deps.config.contractId,
         signer,
-        getPrice: deps.getPrice
+        getPrice: deps.getPrice,
+        ...liquidityContext(env)
       });
     } finally {
       inFlight = false;
@@ -52246,7 +52383,8 @@ function registerTickRoute(app, deps) {
         published: report.published,
         settled: report.settled,
         rolled: report.rolled,
-        matched: report.matched.length
+        matched: report.matched.length,
+        quoted: (report.quoted?.bids ?? 0) + (report.quoted?.asks ?? 0)
       });
     } catch (err) {
       request.log.error({ message: err.message }, "poke tick failed");
