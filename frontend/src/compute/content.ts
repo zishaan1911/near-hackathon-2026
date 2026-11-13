@@ -1,4 +1,4 @@
-import type { ComputeComponentId } from '../lib/api';
+﻿import type { ComputeComponentId } from '../lib/api';
 import imageCredits from '../lib/imageCredits.json';
 
 export interface ImageCredit {
@@ -77,38 +77,10 @@ export const PILLARS: readonly PillarSpec[] = [
   },
 ];
 
-export interface PersonSpec {
-  slug: string;
-  name: string;
-  company: string;
-  line: string;
-  width: number;
-  height: number;
-  objectPosition: string;
-  /** Uniform crop-in for photos where the face is small in the frame. */
-  zoom?: { scale: number; origin: string };
-}
-
-export const PEOPLE: readonly PersonSpec[] = [
-  { slug: 'jensen-huang', name: 'Jensen Huang', company: 'NVIDIA', line: 'Makes the GPUs on the board above.', width: 500, height: 667, objectPosition: '50% 25%' },
-  { slug: 'lisa-su', name: 'Lisa Su', company: 'AMD', line: 'AMD chips power Frontier, the supercomputer on our home page.', width: 500, height: 750, objectPosition: '43% 0%', zoom: { scale: 1.55, origin: '43% 30%' } },
-  { slug: 'satya-nadella', name: 'Satya Nadella', company: 'Microsoft', line: 'Azure spot prices feed this index.', width: 500, height: 639, objectPosition: '50% 30%' },
-  { slug: 'sam-altman', name: 'Sam Altman', company: 'OpenAI', line: 'OpenAI models are in the inference basket.', width: 500, height: 500, objectPosition: '52% 50%' },
-  { slug: 'dario-amodei', name: 'Dario Amodei', company: 'Anthropic', line: 'Anthropic models are in the inference basket.', width: 500, height: 800, objectPosition: '41% 0%', zoom: { scale: 1.35, origin: '41% 25%' } },
-  { slug: 'sundar-pichai', name: 'Sundar Pichai', company: 'Google', line: 'Gemini models are in the inference basket.', width: 500, height: 750, objectPosition: '50% 30%' },
-  { slug: 'demis-hassabis', name: 'Demis Hassabis', company: 'Google DeepMind', line: 'Builds the Gemini models.', width: 500, height: 489, objectPosition: '55% 50%', zoom: { scale: 1.35, origin: '50% 28%' } },
-  { slug: 'mark-zuckerberg', name: 'Mark Zuckerberg', company: 'Meta', line: 'Llama models are in the inference basket.', width: 500, height: 666, objectPosition: '50% 0%' },
-  { slug: 'elon-musk', name: 'Elon Musk', company: 'xAI', line: 'Grok models are in the inference basket.', width: 500, height: 660, objectPosition: '50% 5%' },
-];
-
-export const PEOPLE_DISCLAIMER =
-  'Shown for editorial context only. These people and their companies are not affiliated with Silica and do not endorse it.';
-
 /** Every image slug the site renders; the credits list is derived from this. */
 export const USED_IMAGE_SLUGS: readonly string[] = [
   HERO_IMAGE.slug,
   ...PILLARS.map((p) => p.image.slug),
-  ...PEOPLE.map((p) => p.slug),
 ];
 
 export const IMAGE_CREDITS: readonly ImageCredit[] = (imageCredits as ImageCredit[]).filter((c) =>
