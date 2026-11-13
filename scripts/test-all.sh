@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # Runs all test suites, or one selected suite:
 #   - contracts/near          (Rust, cargo test)
-#   - engine                  (C++)
 #   - blockchain/near         (TypeScript)
-#   - api                      (TypeScript)
-#   - frontend                 (TypeScript)
+#   - server                  (TypeScript)
+#   - frontend                (TypeScript)
 #
 # Usage:
 #   ./scripts/test-all.sh
 #   ./scripts/test-all.sh all
 #   ./scripts/test-all.sh typescript
 #   ./scripts/test-all.sh frontend
-#   ./scripts/test-all.sh cpp
 #   ./scripts/test-all.sh contracts
 #
-# Requires: cargo (Rust), cmake + a C++17 compiler, and Node.js >= 18 + npm
-# for the TypeScript stacks.
+# Requires: cargo (Rust) and Node.js >= 18 + npm for the TypeScript stacks.
 #
-# api/ depends on blockchain/near being built first (its dist/ must
+# server/ depends on blockchain/near being built first (its dist/ must
 # exist), so the TypeScript suite builds it first.
 
 set -uo pipefail
@@ -27,11 +24,11 @@ SELECTED_SUITE="${1:-all}"
 FAILED=0
 
 usage() {
-  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|cpp|contracts]"
+  echo "Usage: ./scripts/test-all.sh [all|typescript|frontend|contracts]"
 }
 
 case "$SELECTED_SUITE" in
-  all|typescript|frontend|cpp|contracts)
+  all|typescript|frontend|contracts)
     ;;
   *)
     echo "Unknown test suite: $SELECTED_SUITE"
@@ -43,7 +40,7 @@ esac
 run_contracts() {
   local failed=0
   local crate
-  for crate in contracts/near/gasx contracts/near/mock-ft; do
+  for crate in contracts/near/silica contracts/near/mock-ft; do
     echo
     echo "==> $crate (Rust)"
     if ! command -v cargo >/dev/null 2>&1; then
@@ -58,31 +55,6 @@ run_contracts() {
     fi
   done
   return "$failed"
-}
-
-run_cpp() {
-  echo
-  echo "==> engine (C++)"
-
-  local build_dir="$REPO_ROOT/engine/build"
-
-  # Preserve the original clean-build behaviour so stale CMake state
-  # cannot affect local or CI test results.
-  rm -rf "$build_dir"
-  mkdir -p "$build_dir"
-
-  if (
-    cd "$build_dir" &&
-    cmake -DCMAKE_BUILD_TYPE=Release .. &&
-    make -j"$(nproc 2>/dev/null || echo 4)" &&
-    ctest --output-on-failure
-  ); then
-    echo "-- Engine tests passed"
-    return 0
-  fi
-
-  echo "!! Engine tests FAILED"
-  return 1
 }
 
 install_node_dependencies() {
@@ -150,7 +122,7 @@ run_typescript() {
     return 1
   fi
 
-  # Build the adapter first because the API imports its dist output.
+  # Build the adapter first because the server imports its dist output.
   if ! run_ts_project \
     "blockchain/near" \
     "NEAR adapter" \
@@ -160,7 +132,7 @@ run_typescript() {
 
   if ! run_ts_project \
     "server" \
-    "API gateway" \
+    "API server" \
     "false"; then
     typescript_failed=1
   fi
@@ -195,15 +167,11 @@ run_and_record() {
 case "$SELECTED_SUITE" in
   all)
     run_and_record run_contracts
-    run_and_record run_cpp
     run_and_record run_typescript
     run_and_record run_frontend
     ;;
   contracts)
     run_and_record run_contracts
-    ;;
-  cpp)
-    run_and_record run_cpp
     ;;
   typescript)
     run_and_record run_typescript

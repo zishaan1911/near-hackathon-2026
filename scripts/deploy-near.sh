@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 #
-# Deploys contracts/near/gasx (and optionally contracts/near/mock-ft as the
-# collateral token), initialises it and creates the EGSI-1H market. Replaces
-# scripts/deploy-sui.sh.
+# Deploys contracts/near/silica (and optionally contracts/near/mock-ft as the
+# collateral token), initialises it and creates the SCI-1H market.
 #
-#   OWNER_ID=me.testnet CONTRACT_ID=gasx.me.testnet TOKEN_ID=tusdc.me.testnet \
-#   PUBLISHER_ID=pub.me.testnet MATCHER_ID=match.me.testnet \
+#   OWNER_ID=me.testnet CONTRACT_ID=silica.me.testnet TOKEN_ID=tusdc.me.testnet \
+#   PUBLISHER_ID=pub.me.testnet \
 #   DEPLOY_MOCK_TOKEN=true ./scripts/deploy-near.sh
+#
+# (The live testnet deployment's account ids keep the project's original name,
+# e.g. gasx.testnet: account ids are on-chain and cannot be renamed.)
 #
 # Environment:
 #   NEAR_NETWORK        testnet (default) | mainnet
 #   OWNER_ID            account that owns the contract; must already be in the
 #                       near CLI keychain and hold enough NEAR to fund the rest
-#   CONTRACT_ID         gasx contract account (created if missing)
+#   CONTRACT_ID         Silica contract account (created if missing)
 #   TOKEN_ID            collateral token account (created if missing and
 #                       DEPLOY_MOCK_TOKEN=true; otherwise an existing NEP-141)
-#   PUBLISHER_ID        account allowed to call update_price
-#   MATCHER_ID          account the matcher service runs as (informational:
-#                       match_orders is permissionless)
+#   PUBLISHER_ID        account allowed to call update_price (the cron tick signs
+#                       as this account; match_orders is permissionless)
 #   DEPLOY_MOCK_TOKEN   true to build and deploy contracts/near/mock-ft
-#   GASX_WASM / TOKEN_WASM  paths to prebuilt wasm files (skips cargo-near)
+#   SILICA_WASM / TOKEN_WASM  paths to prebuilt wasm files (skips cargo-near)
 #   TOKEN_FUNDING / CONTRACT_FUNDING  NEAR for newly created accounts
 #   MARKET_EXPIRY_MS    override the expiry (default: next full hour)
 #   MAX_STALENESS_MS    oracle staleness bound (default 120000)
-#   MAX_PRICE           oracle price ceiling (default 1000, the EGSI scale)
+#   MAX_PRICE           oracle price ceiling (default 1000, the index scale)
 #
 # Requires: near-cli-rs (the `near` binary, v0.17 or newer), cargo-near
 # (`cargo install cargo-near`) and a Rust toolchain with wasm32-unknown-unknown.
@@ -40,7 +41,7 @@ MAX_PRICE="${MAX_PRICE:-1000}"
 
 # Market economics: notional = price * quantity * multiplier, and the margin
 # is margin_bps of that (see docs/near-abi.md).
-UNDERLYING="EGSI-1H"
+UNDERLYING="SCI-1H"
 MULTIPLIER=10000
 TICK=1
 MARGIN_BPS=1000
@@ -49,12 +50,12 @@ say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '    \033[32m✓\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-for var in OWNER_ID CONTRACT_ID TOKEN_ID PUBLISHER_ID MATCHER_ID; do
+for var in OWNER_ID CONTRACT_ID TOKEN_ID PUBLISHER_ID; do
   [ -n "${!var:-}" ] || die "$var is required"
 done
 command -v near  >/dev/null 2>&1 || die "near CLI (near-cli-rs) not found. Install: https://github.com/near/near-cli-rs"
-if [ -z "${GASX_WASM:-}" ] || { [ "$DEPLOY_MOCK_TOKEN" = "true" ] && [ -z "${TOKEN_WASM:-}" ]; }; then
-  cargo near --version >/dev/null 2>&1 || die "cargo-near not found. Install it, or set GASX_WASM / TOKEN_WASM to prebuilt wasm files"
+if [ -z "${SILICA_WASM:-}" ] || { [ "$DEPLOY_MOCK_TOKEN" = "true" ] && [ -z "${TOKEN_WASM:-}" ]; }; then
+  cargo near --version >/dev/null 2>&1 || die "cargo-near not found. Install it, or set SILICA_WASM / TOKEN_WASM to prebuilt wasm files"
 fi
 
 if [ "$NEAR_NETWORK" = "mainnet" ] && [ "${ALLOW_MAINNET:-}" != "true" ]; then
@@ -127,17 +128,17 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "GASX contract"
+say "Silica contract"
 # ---------------------------------------------------------------------------
 
 if account_exists "$CONTRACT_ID" && near contract call-function as-read-only "$CONTRACT_ID" get_oracle \
     json-args '{}' network-config "$NEAR_NETWORK" now >/dev/null 2>&1; then
   ok "contract already initialised at $CONTRACT_ID (skipping deploy and new)"
 else
-  GASX_WASM="${GASX_WASM:-$(build_wasm "$REPO_ROOT/contracts/near/gasx")}"
-  ok "built $GASX_WASM"
+  SILICA_WASM="${SILICA_WASM:-$(build_wasm "$REPO_ROOT/contracts/near/silica")}"
+  ok "built $SILICA_WASM"
   create_account "$CONTRACT_ID" "${CONTRACT_FUNDING:-10 NEAR}"
-  deploy "$CONTRACT_ID" "$GASX_WASM" new \
+  deploy "$CONTRACT_ID" "$SILICA_WASM" new \
     "{\"owner\":\"$OWNER_ID\",\"collateral_token\":\"$TOKEN_ID\",\"publisher\":\"$PUBLISHER_ID\",\"max_staleness_ms\":$MAX_STALENESS_MS,\"max_price\":$MAX_PRICE}"
   ok "contract deployed and initialised: $CONTRACT_ID"
 fi
@@ -175,16 +176,19 @@ say "Done"
 
 cat <<EOF
 
-Put these in .env (keys for the publisher/matcher accounts are NOT written
-here; generate them with the near CLI and add them yourself):
+Put these in .env / the Vercel environment (the publisher's private key is NOT
+written here; take it from the near CLI keychain and set it yourself, e.g. with
+scripts/setup-vercel-secrets.ps1):
 
-GASX_NEAR_NETWORK=$NEAR_NETWORK
-GASX_NEAR_CONTRACT_ID=$CONTRACT_ID
-GASX_NEAR_COLLATERAL_TOKEN=$TOKEN_ID
-GASX_NEAR_DEV_MARKET=false
-GASX_NEAR_PUBLISHER_ACCOUNT_ID=$PUBLISHER_ID
-GASX_NEAR_MATCHER_ACCOUNT_ID=$MATCHER_ID
+SILICA_NEAR_NETWORK=$NEAR_NETWORK
+SILICA_NEAR_CONTRACT_ID=$CONTRACT_ID
+SILICA_NEAR_COLLATERAL_TOKEN=$TOKEN_ID
+SILICA_NEAR_DEV_MARKET=false
+SILICA_NEAR_PUBLISHER_ACCOUNT_ID=$PUBLISHER_ID
+SILICA_NEAR_PUBLISHER_PRIVATE_KEY=<publisher key>
+CRON_SECRET=<shared secret>
 
-Then start the services with: docker compose --profile live up -d
+The older GASX_* names of these variables are still read as a fallback.
+The cron tick (publish, settle, roll, match) then runs from /api/v1/cron/tick.
 
 EOF
