@@ -6,6 +6,8 @@
 
 One live number for what compute costs, and an hourly futures market on it that settles on NEAR.
 
+[![Tests](https://github.com/zishaan1911/near-hackathon-2026/actions/workflows/tests.yml/badge.svg?branch=near-hackathon)](https://github.com/zishaan1911/near-hackathon-2026/actions/workflows/tests.yml) ![Rust](https://img.shields.io/badge/contract-Rust-dea584?logo=rust) ![NEAR](https://img.shields.io/badge/chain-NEAR-00ec97) ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
 [Live app](https://silicaindex.vercel.app) · [Methodology](docs/compute-index.md) · [Contract ABI](docs/near-abi.md) · [Architecture](docs/architecture.md)
 
 ![The Silica Compute Index over the last 90 days](docs/img/index-chart.jpg)
