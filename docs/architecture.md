@@ -1,6 +1,6 @@
-# System architecture notes
+# Architecture notes
 
-Read this before planning large changes.
+How the pieces fit together, and the rules to keep in mind when changing them.
 
 - **Product:** Silica. The index is the Silica Compute Index (id `SCI`), the market is `SCI-1H` (futures on NEAR, hourly markets, cash-settled in tUSDC).
 - **Contract:** `contracts/near/silica` (Rust, crate `silica`), plus `contracts/near/mock-ft` (test collateral token). Live at `gasx.testnet`; collateral `tusdc.gasx.testnet`; oracle `oracle.gasx.testnet`. **Account ids keep the project's original name**: they are on-chain and cannot be renamed. One current market; `roll_market` is callable by the owner or publisher. ABI in `docs/near-abi.md`.
@@ -17,4 +17,4 @@ Read this before planning large changes.
 - **Frontend:** entry `frontend/src/main.tsx` renders `shell/App.tsx`; pages in `pages/`, wallet code in `wallet/` (needs `polyfills.ts`), styling in `ui/silica.css`, index experience in `compute/`.
 - **Images:** `frontend/public/img/compute/`, attribution in `frontend/src/lib/imageCredits.json`. Every image needs an entry; the credits section renders from it. CC BY/BY-SA require attribution.
 - **Tests:** `scripts/test-all.sh [all|typescript|frontend|contracts]` runs everything; CI (`.github/workflows/tests.yml`) runs the same suites on Linux.
-- **Windows paths:** the session folder path is too long for node tools. Use `subst G: <parent of repo>`, so the repo is `G:\near-hackathon-2026`. `server/node_modules/@silica/near-adapter` is a junction to that exact path, so mapping G: to the repo itself breaks the build. Rust needs the GNU toolchain plus `AWS_LC_SYS_PREBUILT_NASM=1`.
+- **Windows:** long checkout paths break some Node tools; map a short drive with `subst` (for example `subst G: <parent folder>`) and work from there. `server/node_modules/@silica/near-adapter` is a junction to `blockchain/near`, so keep the repo folder itself unchanged. Rust on Windows builds with the GNU toolchain plus `AWS_LC_SYS_PREBUILT_NASM=1`.
