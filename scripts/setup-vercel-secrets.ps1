@@ -5,10 +5,8 @@
     .\scripts\setup-vercel-secrets.ps1            # sets the secrets
     .\scripts\setup-vercel-secrets.ps1 -DryRun    # checks everything, changes nothing
 
-  - SILICA_NEAR_PUBLISHER_PRIVATE_KEY (the code also accepts the older
-    GASX_NEAR_PUBLISHER_PRIVATE_KEY) is read from
+  - SILICA_NEAR_PUBLISHER_PRIVATE_KEY is read from
     $HOME\.near-credentials\testnet\oracle.gasx.testnet.json (private_key);
-    account ids keep the project's original name.
   - CRON_SECRET is a fresh random 48-byte Base64Url string.
   Both are written to the `production` and `preview` environments. Nothing
   secret is printed; only the variable names are. Redeploy afterwards for the

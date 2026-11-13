@@ -141,13 +141,6 @@ describe('POST /api/v1/market/poke', () => {
 });
 
 describe('liquidityContext', () => {
-  it('still honours the legacy GASX_ names', () => {
-    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: 'true', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' }).signerAccountId).toBe('p.testnet');
-    expect(
-      liquidityContext({ SILICA_DEMO_LIQUIDITY: 'true', SILICA_NEAR_PUBLISHER_ACCOUNT_ID: 'new.testnet', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'old.testnet' }).signerAccountId,
-    ).toBe('new.testnet');
-  });
-
   it('is empty unless SILICA_DEMO_LIQUIDITY is exactly true and a publisher account is set', () => {
     expect(liquidityContext({})).toEqual({});
     expect(liquidityContext({ SILICA_DEMO_LIQUIDITY: 'true' })).toEqual({});

@@ -34,7 +34,7 @@ function requireEnv(name: string, env: EnvSource): string {
 /**
  * Builds the publisher's signing near-api-js Account from
  * SILICA_NEAR_PUBLISHER_ACCOUNT_ID and SILICA_NEAR_PUBLISHER_PRIVATE_KEY
- * (`ed25519:...`; the GASX_ names also work). Throws if either is missing
+ * (`ed25519:...`). Throws if either is missing
  * or the key is malformed. The key is never logged, and error messages name
  * only the variable.
  */

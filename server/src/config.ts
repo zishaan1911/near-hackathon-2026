@@ -33,7 +33,7 @@ function readEnvInt(name: string, fallback: number): number {
 /** Loads the gateway's own settings plus the NEAR adapter's config (it
  * validates its own required variables — see its .env.example) from
  * SILICA_API_-prefixed (server) and adapter-specific environment
- * variables (GASX_ names still work as a fallback, see env.ts). */
+ * variables (see env.ts). */
 export function loadGatewayConfig(): GatewayConfig {
   return {
     port: readEnvInt('API_PORT', 3000),

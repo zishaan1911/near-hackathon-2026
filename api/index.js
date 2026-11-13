@@ -37638,7 +37638,7 @@ module.exports = __toCommonJS(vercelHandler_exports);
 
 // ../blockchain/near/dist/env.js
 function readEnv(name, env = process.env) {
-  return env[`SILICA_${name}`] ?? env[`GASX_${name}`];
+  return env[`SILICA_${name}`];
 }
 
 // ../blockchain/near/dist/config.js
@@ -48593,7 +48593,7 @@ async function runTick(ctx) {
 
 // src/env.ts
 function readEnv2(name, env = process.env) {
-  return env[`SILICA_${name}`] ?? env[`GASX_${name}`];
+  return env[`SILICA_${name}`];
 }
 
 // src/compute/base.ts

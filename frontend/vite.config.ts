@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// SILICA_<NAME>, falling back to the original GASX_<NAME>.
+// Reads SILICA_<NAME>.
 function readEnv(name: string): string | undefined {
-  return process.env[`SILICA_${name}`] ?? process.env[`GASX_${name}`];
+  return process.env[`SILICA_${name}`];
 }
 
 export default defineConfig({

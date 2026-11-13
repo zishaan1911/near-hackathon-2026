@@ -1,6 +1,6 @@
 # Silica NEAR contract ABI
 
-One contract account (`SILICA_NEAR_CONTRACT_ID`) holds the exchange. One collateral token (`SILICA_NEAR_COLLATERAL_TOKEN`, NEP-141 tUSDC, 6 decimals). The older `GASX_*` names of these variables are still read as a fallback.
+One contract account (`SILICA_NEAR_CONTRACT_ID`) holds the exchange. One collateral token (`SILICA_NEAR_COLLATERAL_TOKEN`, NEP-141 tUSDC, 6 decimals).
 
 Encoding: JSON. `u64` values (price, quantity, ids, timestamps in ms) are JSON **numbers**. Token amounts are `U128` = decimal **strings**. Account ids are strings.
 Units: index price is the Silica Compute Index (SCI) level (0-1000). Margin and payouts are in token base units. `notional = price * quantity * contract_multiplier`; `required_margin = notional * margin_ratio_bps / 10000`.

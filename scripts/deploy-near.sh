@@ -185,7 +185,6 @@ SILICA_NEAR_PUBLISHER_ACCOUNT_ID=$PUBLISHER_ID
 SILICA_NEAR_PUBLISHER_PRIVATE_KEY=<publisher key>
 CRON_SECRET=<shared secret>
 
-The older GASX_* names of these variables are still read as a fallback.
 The cron tick (publish, settle, roll, match) then runs from /api/v1/cron/tick.
 
 EOF
