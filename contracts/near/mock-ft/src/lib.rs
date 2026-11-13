@@ -132,3 +132,59 @@ impl FungibleTokenMetadataProvider for Contract {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    fn as_caller(name: &str) {
+        let id: AccountId = name.parse().unwrap();
+        testing_env!(VMContextBuilder::new().predecessor_account_id(id).build());
+    }
+
+    #[test]
+    fn faucet_registers_and_mints() {
+        as_caller("alice.testnet");
+        let mut c = Contract::new();
+        assert_eq!(c.faucet().0, FAUCET_AMOUNT);
+        assert_eq!(c.ft_balance_of("alice.testnet".parse().unwrap()).0, FAUCET_AMOUNT);
+        assert_eq!(c.ft_total_supply().0, FAUCET_AMOUNT);
+    }
+
+    #[test]
+    fn faucet_fills_up_to_the_cap() {
+        as_caller("alice.testnet");
+        let mut c = Contract::new();
+        for _ in 0..(FAUCET_CAP / FAUCET_AMOUNT) {
+            c.faucet();
+        }
+        assert_eq!(c.ft_balance_of("alice.testnet".parse().unwrap()).0, FAUCET_CAP);
+    }
+
+    #[test]
+    #[should_panic(expected = "faucet cap reached")]
+    fn faucet_stops_at_the_cap() {
+        as_caller("alice.testnet");
+        let mut c = Contract::new();
+        for _ in 0..=(FAUCET_CAP / FAUCET_AMOUNT) {
+            c.faucet();
+        }
+    }
+
+    #[test]
+    fn mint_to_registers_the_receiver() {
+        as_caller("alice.testnet");
+        let mut c = Contract::new();
+        c.mint_to("bob.testnet".parse().unwrap(), U128(42));
+        assert_eq!(c.ft_balance_of("bob.testnet".parse().unwrap()).0, 42);
+    }
+
+    #[test]
+    fn metadata_is_six_decimal_tusdc() {
+        let m = Contract::new().ft_metadata();
+        assert_eq!(m.symbol, "tUSDC");
+        assert_eq!(m.decimals, 6);
+    }
+}
