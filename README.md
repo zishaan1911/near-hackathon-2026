@@ -1,159 +1,105 @@
-# GASX - Ethereum Gas Futures Exchange on Sui
+# Silica
 
-> **AI-native gas futures exchange on Sui, hedged with Thetanuts**
+**Trade the price of compute.** Silica publishes one live number, the **Silica Compute Index (SCI)**, built from what GPUs, cloud servers, AI inference and mining cost right now. An hourly futures market on that number settles on NEAR, so anyone can go long or short on compute.
 
-## The Idea
+- **Live app:** https://silicaindex.vercel.app
+- **Network:** NEAR testnet. Collateral is test tUSDC with no value.
+- **Track:** Unstoppable DeFi (`defi`)
 
-GASX makes Ethereum congestion tradeable. It tracks one index - the **Ethereum Gas Stress Index (EGSI, 0–1000)**, that measures blockspace stress (base fee, block utilization, mempool pressure, etc). AI forecasts EGSI; users trade futures on it with USDC.
+## The problem
 
----
+Compute is becoming a commodity. AI labs, GPU lessors, miners and app builders all have exposure to its price, but there is no simple public benchmark for it and no open market to trade it. GPU rental rates swing double digits in weeks, and the quotes are scattered across marketplaces and clouds.
 
-### Problem Statement
+## What Silica does
 
-Every single day, thousands of builders, traders, and protocols get **blindsided by gas**. You size a trade, you queue a mint, you schedule a DAO payout; and then the mempool erupts, base fee 10x's in six blocks, and your "$4 transaction" clears at "$60 and my dignity." Ethereum's blockspace is the most valuable real estate in Web3, and it is priced **live, with zero forward guidance, for everyone who touches it.**
+1. **Measures** the price of compute across six pillars, from public sources, every minute.
+2. **Publishes** that index on NEAR through an oracle account.
+3. **Lists** an hourly cash-settled future on it (`SCI-1H`). Long gains 1 tUSDC per index point per contract; short is the opposite.
+4. **Settles** on-chain every hour and starts the next market automatically.
 
-It's a **structural, economy-wide volatility tax** on the entire on-chain economy, and until now, nobody has built the instrument to price it, forecast it, or hedge it.
+| Pillar | Weight | Sources |
+|---|---|---|
+| GPU rental (H100, A100, RTX 4090) | 35% | Vast.ai, RunPod, Akash |
+| Cloud GPU spot | 20% | AWS, Azure |
+| AI inference (8-model basket) | 20% | OpenRouter |
+| Cloud CPU spot | 10% | AWS, Azure |
+| Bitcoin hashprice | 10% | blockchain.info, CoinGecko |
+| Ethereum blockspace | 5% | Ethereum RPC, 7-day median base fee |
 
-### Market Gap
+Every price is compared only with its own starting price (the matched-quote method), so a venue dropping out cannot move the index on its own. The base is 1000 on 2026-11-11. Full methodology: [docs/compute-index.md](docs/compute-index.md).
 
-Every mature market hedges its core input cost. Airlines hedge jet fuel. Farmers hedge wheat. Exporters hedge FX. **On-chain, there is no equivalent for gas** - despite gas being the single most universal, unavoidable, and violently volatile cost of doing business in crypto.
+## Try it (about 2 minutes)
 
-That gap is enormous, and it is sitting in plain sight:
+1. Open https://silicaindex.vercel.app. You see the live index and its six pillars.
+2. Open **Index**. You see the history chart, the GPU price board ("Same chip. Different price.") and live compute news.
+3. Open **Trade** and connect a NEAR testnet wallet (MyNearWallet, Meteor or HERE).
+4. Press **Try a demo trade**, or follow the button: it walks you through getting 1,000 test tUSDC, depositing margin and going long or short.
+5. Keep 1 contract as the size. A demo market maker quotes both sides, so the order fills within about 15 seconds; you see "Filled at …" under the button.
+6. Wait for the hourly settlement, then open **Portfolio** and press **Claim**. Your profit or loss is credited to your balance.
 
-- **DeFi protocols** eat unhedged gas risk on every keeper job, liquidation bot, and rebalance.
-- **NFT projects** watch mint margins evaporate the second a drop goes viral and gas spikes with it.
-- **DAOs** budget treasury operations in a currency (gas) with no forward curve.
-- **Retail traders** - literally anyone who has ever smashed "confirm" during a gas spike - are exposed, unhedged, every single time.
+## How NEAR is used
 
-If you have ever watched a gas fee eat your alpha: **you are the market.** GASX exists because that market has never had a product built for it.
+- **Settlement contract** (Rust, `near-sdk` 5): margin accounts, limit orders, on-chain matching with all checks in the contract, an oracle with freshness and range limits, hourly settlement, capped pull-based payouts. Source: [contracts/near/silica](contracts/near/silica). Live at `gasx.testnet`.
+- **Collateral:** a NEP-141 token (`tusdc.gasx.testnet`, testnet-only with a public faucet), deposited with `ft_transfer_call`.
+- **Wallets:** NEAR Wallet Selector. Users sign every order themselves; the server never holds user keys.
+- **Oracle and upkeep:** the server signs with a dedicated oracle account to publish the index, settle, roll to the next hour and match crossing orders.
 
-### Target Users
+NEAR account ids keep the project's original name (`gasx`); they are on-chain and cannot be renamed.
 
-- **DeFi-native power users & bots** - keepers, arbitrageurs, liquidators who eat gas cost as a line item and want to hedge it like any other operating expense.
-- **NFT & dApp teams** - need predictable unit economics around mint/interaction windows, not a coin flip on network conditions.
-- **DAOs & treasuries** - want to budget and hedge blockspace exposure the same disciplined way they'd hedge FX or interest rate risk.
-- **Quant / degen traders** - want a clean, liquid, AI-forecasted volatility product that isn't just "another perp on a coin."
-- **Anyone who has ever rage-quit a transaction because gas 5x'd mid-confirm.** (Yes, you. We see you.)
+## Architecture
 
-### High-Level Architecture
-
-GASX is **AI-native, cross-chain by design, and built for capital efficiency**:
-
-```text
-   Ethereum mempool/base fee data
-              │
-              ▼
-   ┌─────────────────────┐
-   │   EGSI Engine (AI)   │   Python + C++ · real-time index + forecast
-   └─────────┬────────────┘
-             │  served live via API gateway
-             ▼
-   ┌─────────────────────┐        ┌─────────────────────┐
-   │   Sui (Move) market  │◄──────►│  Thetanuts (Base)   │
-   │  EGSI-1H futures     │        │  ETH options hedge  │
-   └─────────────────────┘        └─────────────────────┘
-             ▲
-             │
-     Frontend (React) — trade, chart, hedge, chat with Kora
+```
+price sources ──> index engine (server) ──> oracle account ──> Silica contract on NEAR <── your wallet
+                         │                                         ▲
+                         └──> website + API (Vercel) ──────────────┘ unsigned transactions for your wallet
 ```
 
-- **Signal layer:** a Python + C++ engine ingests live Ethereum data and computes EGSI in real time, with a State-of-the-art AI forecast on top.
-- **Settlement layer:** Sui/Move, chosen specifically because it is **not** the chain whose congestion is being traded - sub-cent fees keep the market itself from distorting the thing it's pricing.
-- **Hedge layer:** Thetanuts on Base mainnet - real ETH options, real risk offset, not a synthetic paper hedge.
-- **Experience layer:** a full trading terminal plus **Kora**, an AI copilot that explains the platform and reads back live stats on request.
+| Path | What it is |
+|---|---|
+| `contracts/near/silica` | Settlement contract (Rust) |
+| `contracts/near/mock-ft` | Test collateral token with faucet |
+| `server` | API gateway (Fastify): index engine, market reads, transaction preparation, upkeep tick, news feed |
+| `blockchain/near` | NEAR adapter: chain reads, transaction builders, the upkeep tick |
+| `frontend` | Web app (React, Vite) |
+| `api/index.js` | The server bundled for Vercel (generated by `npm --prefix server run build:vercel`) |
+| `supabase/migrations` | Optional Postgres storage for index snapshots |
+| `docs` | Methodology, contract ABI, market notes |
 
-One index. One market. One hedge rail. Engineered to scale horizontally into a whole **family of blockspace derivatives** (see roadmap).
+## Run it locally
 
-### Business Model
+Requires Node.js 20+.
 
-GASX monetizes the exact thing it creates: a liquid market for a previously unpriced risk.
-
-- **Trading fees** - a basis-point take on every winning EGSI-1H contract opened and settled. Classic exchange economics, applied to a brand-new asset class.
-- **Protocol-owned hedge spread** - GASX's own book captures the spread between what it collects in premium and what it pays to hedge on Thetanuts, turning risk management into a revenue center instead of a cost center.
-- **Premium AI insights** - deeper EGSI forecasting, historical analytics, and Kora-powered "gas advisory" for power users, DAOs, and protocols who want to plan treasury ops around a forward curve, not a guess.
-- **B2B/API licensing** - the EGSI feed itself is a product: wallets, dApps, and gas estimators can license the index and forecast to power their own UX, the way market data terminals license price feeds today.
-- **Expansion flywheel** - every new blockspace market (BASE-GAS, ARB-GAS, BLOB-GAS) reuses the same engine, the same hedge rail, and the same user base, compounding distribution instead of resetting it.
-
-TL;DR: **first-mover in an entirely uncontested category** - gas derivatives, with a credibly neutral settlement layer, a real hedge rail, and a reliable growth path.
-
----
-
-**Problem, restated simply.** Gas congestion risk is hard to quantify, and there is no direct price discovery for future blockspace stress. Companies need predictable gas costs.
-
-**Solution, restated simply.** Bet on EGSI. If the bet wins, the payout offsets real gas fees.
-
-## How It Works
-
-1. The user sees the current EGSI and the AI forecast (e.g., EGSI = 450, forecast: 570 in 1 hour) and buys 5 contracts.
-2. The order goes to the Sui contract; USDC is locked as a position.
-3. The AI Agent keeps computing EGSI. The frontend reads history through the API gateway, which is the only service that touches the database.
-4. After 1 hour the contract settles against the final EGSI. The winner collects USDC; the loser's USDC goes to the other side of the bet, another user, or GASX's own account if no one else exists.
-
-**The hedge (why Thetanuts?).** GASX itself controls the settlement price feed, so it is not fully decentralized, but Thetanuts never decides outcomes. It is where GASX buys insurance: when gas spikes, everyone bets the same direction, and GASX's own account ends up holding the losing side. So the AI agent hedges with ETH options on Thetanuts on Base mainnet.
-
-## Why Sui?
-
-1. **Gas futures can't trade on the chain that charges the gas.** On Ethereum/Base, every order pays the very congestion being traded, distorting the market. Sui's sub-cent fees keep it neutral.
-2. **Performance fits the product.** ~0.4s finality and parallel execution suit 1-hour futures and a fast-moving settlement price feed.
-3. **Move is safer for financial code.** Resources can't be copied or lost by accident, removing whole classes of Solidity bugs.
-4. **The thesis generalizes.** A market on a non-EVM chain, hedged on Base, shows blockspace derivatives are chain-agnostic. Next: BASE-GAS, ARB-GAS, BLOB-GAS.
-
-## Run
-
-Host the backend on one machine; anyone on the same network opens it in a
-browser. Nothing to install on other machines, and no keys or deployment
-required, the Sui adapter runs in dev-market mode (orders disabled,
-labeled in the UI) while the AI service computes a **real EGSI from live
-Ethereum data**.
-
-On the host machine (Docker Desktop on Windows):
-
-```text
-docker compose up --build   # build + start everything
+```bash
+npm --prefix blockchain/near ci && npm --prefix blockchain/near run build
+npm --prefix server ci && npm --prefix server run dev      # API on :3000
+npm --prefix frontend ci && npm --prefix frontend run dev  # app on :5173, proxies /api
 ```
 
-Then find the host's LAN IP (Windows: `ipconfig`, e.g. `192.168.1.20`) and
-open `http://192.168.1.20/` from any machine on the same network.
+Configuration is in `.env.example`. With no contract configured the API runs in a read-only dev-market mode. Tests: `bash scripts/test-all.sh` (Rust tests need `cargo`).
 
-The stack is four services: MySQL (schema auto-applied), the AI service,
-the API gateway, and an nginx web server that serves the frontend and
-proxies `/api` to the gateway.
+Deploying your own contract: `scripts/deploy-near.sh` (needs `near-cli-rs`).
 
-```text
-docker compose down         # stop and remove containers
-docker compose down -v      # also wipe the MySQL data volume
-```
+## Limitations (honest list)
 
-After you change code, rebuild with the same `docker compose up --build`.
-Builds are layer-cached, so you never re-download from scratch:
+- **Testnet only.** Nothing here has value.
+- **One trusted oracle.** A single account publishes the index. A production version needs several independent publishers.
+- **Settlement timing.** Settlement happens at the first upkeep tick after expiry, using the index at that moment. Without a per-minute scheduler, a trader could pick that moment. A production version should settle on a window average.
+- **Demo market maker.** The oracle account also quotes 1-contract orders so demos fill. The price setter trading is a conflict of interest, acceptable only on testnet. See [docs/market.md](docs/market.md).
+- **Unofficial data endpoints.** Some sources are public endpoints that back their own websites and can change or rate-limit.
+- **History.** GPU, cloud and AI prices have no public history. The chart before the base date is a partial reconstruction from the two pillars that do (Bitcoin hashprice and Ethereum blockspace), clearly labelled; from 2026-11-12 the chart uses real on-chain hourly settlements.
+- **Equal-size matching.** Orders only match an opposite order of the same size.
 
-- **Nothing changed** → `docker compose up -d` reuses the existing images
-  (no build, no download).
-- **Only code changed** → `docker compose up --build` re-runs only the
-  compile/copy steps; base images (`python`, `node`, `mysql`, `nginx`) and
-  the `npm ci`/`pip install` layers are reused from cache.
-- **A dependency changed** (`package.json`, `package-lock.json`, or
-  `ai/requirements.txt`) → only that service's install layer re-runs.
+## Built during NEAR HACKATHON, and what came before
 
-Sui is pinned to **testnet** in `docker-compose.yml` (backend adapters) and
-the frontend build (`VITE_SUI_NETWORK=testnet`). The "DEV MARKET" banner you
-see is the un-deployed synthetic market (orders disabled), not the network —
-the chain is testnet.
+Silica was built for **NEAR HACKATHON** (2026-11-01 to 2026-11-14). It started from **GASX**, the author's earlier project (Ethereum gas futures on Sui, built for a different hackathon). The tag [`pre-hackathon`](https://github.com/zishaan1911/near-hackathon-2026/tree/pre-hackathon) marks that baseline as imported. Everything after it was built during this hackathon: the NEAR contract, the move from gas to a compute index, the index engine, the upkeep tick, the new frontend and the removal of the Sui, Thetanuts and Python components. Compare: [`pre-hackathon...near-hackathon`](https://github.com/zishaan1911/near-hackathon-2026/compare/pre-hackathon...near-hackathon).
 
-If a client can't connect: allow inbound TCP 80 through the
-Windows Firewall and turn off the router's "client isolation". If port 80
-is taken, change the `web` port in `docker-compose.yml` (e.g. `8080:80`)
-and browse `http://<host-ip>:8080/`.
+## Credits
 
-To go live: deploy `contracts/gasx` on Sui and fill in the deployed IDs.
-Run every test suite: `./scripts/test-all.sh`.
+- Photos: Wikimedia Commons, under CC BY, CC BY-SA, CC0 or public domain. Authors and licences are listed in the app under **Image credits** and in `frontend/src/lib/imageCredits.json`.
+- Charts: [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/).
+- Main libraries: `near-sdk`, `near-contract-standards`, `near-api-js`, NEAR Wallet Selector, Fastify, `postgres`, React, Vite, Motion.
+- Built with AI coding assistance.
 
-## The Safety Line
+## License
 
-The AI can request actions but never bypass policy: position caps, 1% slippage, 70% min confidence, tiny hedge budget, isolated wallet. Everything state-changing goes:
-
-```text
-AI → policy → adapter → transaction
-```
-
-## GASX - Trade and hedge Ethereum gas contracts with our Agentic AI, Kora.
+[MIT](LICENSE)
