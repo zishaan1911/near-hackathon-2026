@@ -50,9 +50,7 @@ Why: a plain average of prices moves when a cheap venue (say RunPod at $1.79) dr
 - **cloud_cpu_spot**: AWS spot `m7i`, `c7i`, `r7i`, `m7g` `.xlarge` and Azure `Standard_D4s_v5` (4 vCPU each), $/vCPU-hour, median across US regions. Products: general x86 (m7i + D4s_v5), compute x86, memory x86, general ARM.
 - **ai_inference**: fixed basket of 8 OpenRouter models, blended 3:1; one quote per model. At least 4 models must be present.
 - **btc_hashprice**: `3.125 BTC x 144 blocks/day x BTC/USD / hashrate(TH/s)`; hashrate from `api.blockchain.info/stats`, BTC/USD from CoinGecko falling back to blockchain.info. Subsidy only, ignores fees, assumes 144 blocks per day.
-- **blockspace**: computed in TypeScript from Ethereum JSON-RPC (`GASX_ETH_RPC_URL`, default `https://ethereum-rpc.publicnode.com`). `baseFeePerGas` is sampled every 300 blocks (about hourly) for 168 samples (7 days) using `eth_getBlockByNumber` in batches of 50. Value = median gwei x 1e-3 x ETH/USD = $/1M gas. ETH/USD comes from CoinGecko, falling back to the Chainlink ETH/USD feed (`eth_call latestAnswer`, 8 decimals). The 7-day median is cached for 1 hour.
-
-The index no longer depends on the AI service.
+- **blockspace**: computed in TypeScript from Ethereum JSON-RPC (`SILICA_ETH_RPC_URL`, default `https://ethereum-rpc.publicnode.com`). `baseFeePerGas` is sampled every 300 blocks (about hourly) for 168 samples (7 days) using `eth_getBlockByNumber` in batches of 50. Value = median gwei x 1e-3 x ETH/USD = $/1M gas. ETH/USD comes from CoinGecko, falling back to the Chainlink ETH/USD feed (`eth_call latestAnswer`, 8 decimals). The 7-day median is cached for 1 hour.
 
 ## Quality controls
 
@@ -71,7 +69,7 @@ The index no longer depends on the AI service.
 There are three history series. No database is needed for the first two, and none of them is invented.
 
 1. **Back-cast (daily, up to 90 days before the base date).** Only two pillars have real public history: Bitcoin hashprice (blockchain.info `hash-rate` and `market-price` charts) and Ethereum blockspace (base fee sampled every 6 hours, 7-day rolling median in gwei, times that day's real ETH/USD from CoinGecko `market_chart`; if CoinGecko fails, today's ETH price is used and the response says `ethPrice: "current"` instead of `"daily"`). The level is `1000 * (hash_d / hash_base)^0.10 * (gas_d / gas_base)^0.05`, where each base is the same-method value on the base date, so the back-cast is exactly 1000 on the base date and joins the live index. The other four pillars (GPU rental, cloud GPU, cloud CPU, AI inference) have no public history and are held at their base value. **So the back-cast shows only how the two pillars with public history would have moved the index; it is not the full index.** A day missing either input is skipped, never interpolated. The response field is `backcast: { points: [{ t, level }], method, pillars: ["btc_hashprice", "blockspace"], ethPrice }`, cached for one hour.
-2. **On-chain settlements (hourly, real).** Every settled hourly market (underlying ending in `CI-1H`: `CCI-1H`, `SCI-1H`) stores its settlement price on chain. The API reads `get_market({ market_id })` for every id from 1 to the current one and returns `settlements: [{ t, level, marketId }]`, with `t` the expiry time. Settled markets never change, so they are cached in memory for good; ids not yet settled are re-read at most once a minute. The cache is per server instance and is rebuilt after a restart.
+2. **On-chain settlements (hourly, real).** Every settled hourly market (underlying ending in `CI-1H`, e.g. `SCI-1H`) stores its settlement price on chain. The API reads `get_market({ market_id })` for every id from 1 to the current one and returns `settlements: [{ t, level, marketId }]`, with `t` the expiry time. Settled markets never change, so they are cached in memory for good; ids not yet settled are re-read at most once a minute. The cache is per server instance and is rebuilt after a restart.
 3. **Persisted snapshots.** When a database exists, the cron snapshots above are returned as `points`. There is no public history for GPU, cloud or AI prices, so their own history exists only from the first persisted snapshot.
 
 `backfill` is the per-pillar raw series: hashprice by day and blockspace ($/1M gas) every 6 hours, now priced at each date's real ETH/USD (the earlier constant-ETH approximation is gone).
@@ -82,9 +80,9 @@ There are three history series. No database is needed for the first two, and non
 
 `npx tsx scripts/snapshotCompute.ts --write-base` fetches live quotes and rewrites `server/src/compute/base.ts` (base date, base quotes, representative component values). `npx tsx scripts/snapshotCompute.ts` prints the live level and per-component quote counts. A quote that was absent when the base was written (for example RTX 4090 on Akash with no availability) has no base and is excluded until a new methodology version re-bases it.
 
-## Why v1.0's EGSI component was replaced
+## Why blockspace is a price, not a stress score
 
-v1.0 used an earlier EGSI score (0-1000) as the blockspace component. It was too noisy for a price index: a bounded stress score swings with short-lived block utilisation rather than the price of gas, it is not a price, and it tied the index to a separate service. v2.0 uses the actual price of blockspace: the 7-day median base fee in dollars per million gas, which is smooth, observable by anyone with an RPC endpoint, and comparable in kind to the other components. Its weight was cut from 10% to 5%.
+v1.0 used a bounded stress score (0-1000) as the blockspace component. It swung with short-lived block utilisation rather than the price of gas, so it was not a price. v2.0 uses the actual price of blockspace: the 7-day median base fee in dollars per million gas, which is smooth, observable by anyone with an RPC endpoint, and comparable in kind to the other components. Its weight was cut from 10% to 5%.
 
 ## Known limitations (disclose these)
 

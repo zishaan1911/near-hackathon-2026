@@ -1,8 +1,10 @@
-# GASX NEAR contract ABI (frozen)
+# Silica NEAR contract ABI
 
-One contract account (`GASX_NEAR_CONTRACT_ID`, e.g. `gasx.testnet`) holds the exchange. One collateral token (`GASX_NEAR_COLLATERAL_TOKEN`, NEP-141 tUSDC, 6 decimals).
+One contract account (`SILICA_NEAR_CONTRACT_ID`, e.g. `gasx.testnet`) holds the exchange. One collateral token (`SILICA_NEAR_COLLATERAL_TOKEN`, NEP-141 tUSDC, 6 decimals). The older `GASX_*` names of these variables are still read as a fallback.
+
+Note: account ids keep the project's original name (`gasx.testnet`, `tusdc.gasx.testnet`, `oracle.gasx.testnet`). They are on-chain and cannot be renamed; the contract itself is the Silica contract (crate `silica`).
 Encoding: JSON. `u64` values (price, quantity, ids, timestamps in ms) are JSON **numbers**. Token amounts are `U128` = decimal **strings**. Account ids are strings.
-Units: index price is the EGSI score (0-1000). Margin and payouts are in token base units. `notional = price * quantity * contract_multiplier`; `required_margin = notional * margin_ratio_bps / 10000`.
+Units: index price is the Silica Compute Index (SCI) level (0-1000). Margin and payouts are in token base units. `notional = price * quantity * contract_multiplier`; `required_margin = notional * margin_ratio_bps / 10000`.
 
 Markets are numbered. The contract has a `current_market_id`. An admin can start the next market after the current one settles. Old markets keep their settlement price so late claims still work.
 
@@ -41,23 +43,25 @@ TradeView  = { trade_id: u64, market_id: u64, buyer: string, seller: string, pri
 | `set_margin_ratio` | owner | `{ margin_ratio_bps }` | |
 | `set_publisher` | owner | `{ publisher }` | |
 | `set_max_staleness` | owner | `{ max_staleness_ms }` | |
+| `set_max_price` | owner | `{ max_price: u64 }` | sets the oracle's and the order book's price ceiling; must be positive |
+| `roll_market` | owner or publisher | `{ expiry_ms: u64 }` -> `u64` market id | once the current market has settled: starts the next market with the same parameters, expiring at `expiry_ms`; cannot change any parameter, so the cron tick can roll hourly markets without the owner key |
 | `update_price` | publisher | `{ price: u64 }` | rejects `price > max_price` |
 | `withdraw` | any | `{ amount: U128 }` | needs **1 yoctoNEAR** attached; pays out from `available` via `ft_transfer`; refunded on failure |
 | `place_order` | any | `{ is_bid: bool, price: u64, quantity: u64 }` -> `u64` order id | locks required margin from `available`; price must be a multiple of tick size |
 | `cancel_order` | order owner | `{ order_id: u64 }` | releases locked margin; allowed also after settlement |
-| `match_orders` | anyone | `{ buy_order_id: u64, sell_order_id: u64 }` -> `u64` trade id | same checks as the Move version; trades at the ask price; does not allow self-trade |
+| `match_orders` | anyone | `{ buy_order_id: u64, sell_order_id: u64 }` -> `u64` trade id | trades at the ask price; does not allow self-trade |
 | `settle_market` | anyone | `{}` | after expiry, fresh oracle, once |
 | `claim` | buyer or seller | `{ trade_id: u64 }` | credits payout to the caller's `available`; once per side |
 
 Deposit: user calls `ft_transfer_call` on the **token** contract:
-`{ receiver_id: <gasx contract>, amount: "<U128>", msg: "" }` with **1 yoctoNEAR** attached. The contract's `ft_on_transfer` credits `available` (only accepts the configured token) and returns `"0"`.
-The token contract (and the user) must be registered with storage on each other: the user needs `storage_deposit` on the token, and the gasx contract is registered once at deploy.
+`{ receiver_id: <Silica contract>, amount: "<U128>", msg: "" }` with **1 yoctoNEAR** attached. The contract's `ft_on_transfer` credits `available` (only accepts the configured token) and returns `"0"`.
+The token contract (and the user) must be registered with storage on each other: the user needs `storage_deposit` on the token, and the Silica contract is registered once at deploy.
 
 Account storage: the contract does not charge storage per account (the owner funds it).
 
-## Events (NEP-297, standard `gasx`, version `1.0.0`)
+## Events (NEP-297, standard `silica`, version `1.0.0`)
 
-`order_placed`, `order_cancelled`, `trade_executed`, `market_settled`, `claimed`, `price_updated`, `deposited`, `withdrawn`. Logged as `EVENT_JSON:{...}`. Data fields mirror the view fields (snake_case).
+`market_created`, `order_placed`, `order_cancelled`, `trade_executed`, `market_settled`, `claimed`, `price_updated`, `deposited`, `withdrawn`, `withdraw_refunded`, `market_status_changed`. Logged as `EVENT_JSON:{...}`. Data fields mirror the view fields (snake_case).
 
 ## Gas
 

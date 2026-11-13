@@ -1,10 +1,10 @@
 # Market notes: SCI-1H
 
-The product is **Silica**; the index is the Silica Compute Index (`SCI`, see `compute-index.md`) and the hourly market is `SCI-1H`.
+The product is **Silica**; the index is the Silica Compute Index (`SCI`, see `compute-index.md`) and the hourly market is `SCI-1H`. NEAR account ids keep the project's original name (e.g. `gasx.testnet`): account ids are on-chain and cannot be renamed.
 
 ## Demo liquidity
 
-Orders only match an opposite order of the **same quantity** (the contract rejects a quantity mismatch), and on a testnet demo nobody is on the other side. So the cron tick can run an optional maker (`GASX_DEMO_LIQUIDITY=true`, `GASX_DEMO_LIQUIDITY_QUANTITY`, default 100). It quotes one bid and one ask of that quantity, one tick either side of the index, from the **publisher (oracle) account**, re-pricing them as the index moves and stopping in the last 60 seconds before expiry. After a market rolls it cancels the maker's orders in the old market and claims its settled trades (at most 5 per tick) so its margin recycles.
+Orders only match an opposite order of the **same quantity** (the contract rejects a quantity mismatch), and on a testnet demo nobody is on the other side. So the cron tick can run an optional maker (`SILICA_DEMO_LIQUIDITY=true`, `SILICA_DEMO_LIQUIDITY_QUANTITY`, default 100; the older `GASX_` names also work). It quotes one bid and one ask of that quantity, one tick either side of the index, from the **publisher (oracle) account**, re-pricing them as the index moves and stopping in the last 60 seconds before expiry. After a market rolls it cancels the maker's orders in the old market and claims its settled trades (at most 5 per tick) so its margin recycles.
 
 **Conflict of interest.** The maker is the account that sets the oracle price. An oracle operator trading against users is a conflict of interest. This is acceptable only for a testnet demo and must not be enabled anywhere real money is at stake.
 
