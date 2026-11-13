@@ -1,8 +1,8 @@
 {
-  "name": "@gasx/frontend",
+  "name": "@silica/frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "GASX web app (ARCHITECTURE.md §2): wallet, market screen, order form, positions, hedge view. Talks only to the API gateway.",
+  "description": "Silica web app: the Silica Compute Index, the SCI-1H market, wallet, order ticket and portfolio. Talks only to the Silica API server.",
   "type": "module",
   "scripts": {
     "dev": "vite",

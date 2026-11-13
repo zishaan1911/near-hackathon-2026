@@ -1,6 +1,6 @@
 import type { PreparedTransaction } from './api';
 
-/** The collateral token (tUSDC) contract. */
+/** The collateral token (tUSDC) contract. Account ids keep the project's original name (they are on-chain). */
 export const TOKEN_ID: string = import.meta.env.VITE_NEAR_COLLATERAL_TOKEN || 'tusdc.gasx.testnet';
 export const TOKEN_SYMBOL = 'tUSDC';
 

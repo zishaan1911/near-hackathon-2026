@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// SILICA_<NAME>, falling back to the original GASX_<NAME>.
+function readEnv(name: string): string | undefined {
+  return process.env[`SILICA_${name}`] ?? process.env[`GASX_${name}`];
+}
+
 export default defineConfig({
   plugins: [react()],
   // wallet-selector and its @near-js dependencies expect a Node-style global.
@@ -16,11 +21,11 @@ export default defineConfig({
       usePolling: true,
       interval: 300,
     },
-    // The gateway runs separately (see api/README.md). Proxying keeps the
-    // browser same-origin, so no CORS config is needed on the gateway.
+    // The API server runs separately (`npm run dev` in server/). Proxying keeps
+    // the browser same-origin, so no CORS config is needed on the server.
     proxy: {
       '/api': {
-        target: process.env.GASX_API_URL || 'http://localhost:3000',
+        target: readEnv('API_URL') || 'http://localhost:3000',
         changeOrigin: true,
       },
     },
