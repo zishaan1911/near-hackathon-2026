@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+﻿import { useMemo } from 'react';
 import { creditFor, HERO_IMAGE } from '../compute/content';
 import { formatChange, formatLevel } from '../compute/helpers';
 import { IndexChart, useIndexHistory } from '../compute/IndexHistory';
+import { NewsFeed } from '../compute/NewsFeed';
 import { PillarCards, PillarTicker } from '../compute/Pillars';
 import { changeOver, filterRange, latestTime } from '../compute/series';
 import { useComputeIndex } from '../compute/useComputeIndex';
@@ -162,6 +163,8 @@ export default function Home() {
           </ol>
         </Reveal>
       </section>
+
+      <NewsFeed limit={5} compact />
 
       <section className="closing-band">
         <img

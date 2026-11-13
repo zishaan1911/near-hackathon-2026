@@ -1,4 +1,4 @@
-/* Silica. One stylesheet, dark only. Type carries the page; light is decoration. */
+﻿/* Silica. One stylesheet, dark only. Type carries the page; light is decoration. */
 
 :root {
   color-scheme: dark;
@@ -1791,66 +1791,6 @@ h3 {
   vertical-align: 2px;
 }
 
-/* People, as a row that scrolls sideways. */
-.people {
-  --edge: max(var(--gutter), calc((100vw - 1200px) / 2 + var(--gutter)));
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: var(--edge);
-  padding: 4px var(--edge) 24px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.people::-webkit-scrollbar {
-  display: none;
-}
-
-.person {
-  flex: 0 0 clamp(220px, 24vw, 280px);
-  scroll-snap-align: start;
-  display: grid;
-  align-content: start;
-  gap: 14px;
-}
-
-.person-photo {
-  aspect-ratio: 4 / 5;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background: var(--bg-2);
-}
-
-.person-photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: grayscale(1) contrast(1.06) brightness(0.86);
-  transition: filter 500ms ease;
-}
-
-.person:hover .person-photo img {
-  filter: grayscale(0.1) contrast(1.02) brightness(0.95);
-}
-
-.person-text {
-  display: grid;
-  gap: 4px;
-  padding: 0 2px;
-}
-
-.person-text .small:last-child {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.disclaimer {
-  margin-top: 16px;
-  max-width: 60ch;
-}
-
 .fold {
   border-top: 1px solid var(--line);
 }
@@ -2700,5 +2640,54 @@ h3 {
   /* On the ticket, the corner belongs to the thumb. */
   .ask-phone-hidden {
     display: none;
+  }
+}
+
+/* News feed. */
+.news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 40px;
+}
+
+.news-compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.news-row {
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.news-title {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.news-title:hover,
+.news-title:focus-visible {
+  color: var(--cyan);
+}
+
+.news-skel {
+  display: block;
+  height: 40px;
+  width: 100%;
+}
+
+.news-note {
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .news-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

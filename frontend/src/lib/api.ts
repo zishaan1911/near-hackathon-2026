@@ -722,3 +722,24 @@ export async function getComputeHistory(days = 30): Promise<ComputeHistoryRespon
     },
   };
 }
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  via: 'hn' | 'google';
+}
+
+export interface NewsResponse {
+  asOf: string;
+  items: NewsItem[];
+}
+
+export async function getNews(): Promise<NewsResponse> {
+  const payload = await request('/api/v1/news');
+  const root = rec(payload);
+  if (!Array.isArray(root.items)) throw new Error('The news response was not in the expected shape.');
+  return payload as NewsResponse;
+}

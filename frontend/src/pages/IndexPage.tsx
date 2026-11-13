@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import type { ComputeGpu } from '../lib/api';
-import { IMAGE_CREDITS, PEOPLE, PEOPLE_DISCLAIMER, SOURCES } from '../compute/content';
+import { IMAGE_CREDITS, SOURCES } from '../compute/content';
 import {
   formatAsOf,
   formatChange,
@@ -14,6 +14,7 @@ import {
   venueName,
 } from '../compute/helpers';
 import { IndexChart, useIndexHistory, type IndexHistory } from '../compute/IndexHistory';
+import { NewsFeed } from '../compute/NewsFeed';
 import { PillarCards } from '../compute/Pillars';
 import { useComputeIndex } from '../compute/useComputeIndex';
 import { PATHS } from '../lib/routes';
@@ -104,40 +105,6 @@ function SourceHistory({ data }: { data: IndexHistory }) {
         />
       </div>
     </div>
-  );
-}
-
-function People() {
-  return (
-    <>
-      <ul className="people" aria-label="People" tabIndex={0}>
-        {PEOPLE.map((person) => (
-          <li key={person.slug} className="person">
-            <div className="person-photo">
-              <img
-                src={`/img/compute/${person.slug}.jpg`}
-                width={person.width}
-                height={person.height}
-                alt={`Portrait of ${person.name}`}
-                loading="lazy"
-                style={{
-                  objectPosition: person.objectPosition,
-                  ...(person.zoom
-                    ? { transform: `scale(${person.zoom.scale})`, transformOrigin: person.zoom.origin }
-                    : null),
-                }}
-              />
-            </div>
-            <div className="person-text">
-              <h3>{person.name}</h3>
-              <p className="muted small">{person.company}</p>
-              <p className="small">{person.line}</p>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <div className="wrap"><p className="muted small disclaimer">{PEOPLE_DISCLAIMER}</p></div>
-    </>
   );
 }
 
@@ -254,7 +221,7 @@ export default function IndexPage() {
           <p className="live-label">
             <span className={level !== null ? 'dot dot-live' : 'dot'} aria-hidden="true" />
             <span>Live</span>
-            {index?.asOf && <span className="num">· {formatAsOf(index.asOf)}</span>}
+            {index?.asOf && <span className="num">Â· {formatAsOf(index.asOf)}</span>}
           </p>
           <h1 className="display display-md">
             <span>Silica Compute Index.</span> <span className="lo">What compute costs, in one number.</span>
@@ -266,7 +233,7 @@ export default function IndexPage() {
               </p>
               <p className="muted num">
                 <span className={change.direction ?? ''}>{change.text}</span> since base {formatLevel(base, 0)}
-                {down > 0 && <> · {down} of {components.length} sources down</>}
+                {down > 0 && <> Â· {down} of {components.length} sources down</>}
               </p>
             </div>
           ) : loading ? (
@@ -317,16 +284,7 @@ export default function IndexPage() {
         </Reveal>
       </section>
 
-      <section className="section">
-        <Reveal>
-          <div className="wrap section-head">
-            <h2 className="title">
-              <span>The people</span> <span className="lo">setting the price of compute.</span>
-            </h2>
-          </div>
-          <People />
-        </Reveal>
-      </section>
+      <NewsFeed />
 
       <section className="wrap section">
         <details ref={method} id="method" className="fold">

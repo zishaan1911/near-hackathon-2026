@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   buildChart,
   formatAsOf,
@@ -16,7 +16,7 @@ import {
   venueName,
   weightSegments,
 } from '../src/compute/helpers';
-import { IMAGE_CREDITS, PEOPLE, PILLARS, USED_IMAGE_SLUGS } from '../src/compute/content';
+import { IMAGE_CREDITS, PILLARS, USED_IMAGE_SLUGS } from '../src/compute/content';
 
 describe('formatPrice', () => {
   it('uses per-unit precision', () => {
@@ -207,7 +207,7 @@ describe('content', () => {
       expect(credit.sourceUrl).toMatch(/^https:/);
     }
   });
-  it('has the six pillars and nine people', () => {
+  it('has the six pillars', () => {
     expect(PILLARS.map((p) => p.id)).toEqual([
       'gpu_rental',
       'cloud_gpu_spot',
@@ -216,6 +216,5 @@ describe('content', () => {
       'btc_hashprice',
       'blockspace',
     ]);
-    expect(PEOPLE).toHaveLength(9);
   });
 });
