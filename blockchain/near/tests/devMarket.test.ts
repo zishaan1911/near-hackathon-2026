@@ -14,7 +14,7 @@ function devConfig(): NearAdapterConfig {
 }
 
 describe('dev market', () => {
-  it('serves a synthetic market with sane EGSI-1H terms', () => {
+  it('serves a synthetic market with sane SCI-1H terms', () => {
     const state = fetchDevMarketState(devConfig());
 
     expect(state.devMode).toBe(true);

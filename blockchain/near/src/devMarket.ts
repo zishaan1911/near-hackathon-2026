@@ -1,8 +1,8 @@
 /**
- * Dev-market mode: a synthetic, clearly-marked EGSI-1H market served
- * when the gasx contract is not yet deployed (config.devMarket).
+ * Dev-market mode: a synthetic, clearly-marked SCI-1H market served
+ * when the Silica contract is not yet deployed (config.devMarket).
  *
- * It exists so the whole stack — AI service, API gateway, frontend —
+ * It exists so the whole stack (server, frontend)
  * runs end-to-end before anyone has deployed the contract to NEAR.
  * Everything that reads the market (GET /api/v1/market) works; reads of
  * accounts/orders/trades return empty results; everything that would
@@ -13,8 +13,8 @@
  * 1-hour expiry rolling to the next whole hour, multiplier 1, tick 1,
  * 50% initial margin, unpaused, unsettled. The oracle has never
  * published, which the frontend displays honestly as "never published" —
- * the live EGSI value itself still comes from the AI service through the
- * gateway, not from this synthetic market.
+ * the live index value itself comes from the server's compute service,
+ * not from this synthetic market.
  */
 import type { NearAdapterConfig } from './config.js';
 import type { MarketState } from './types.js';
@@ -26,7 +26,7 @@ export function fetchDevMarketState(config: NearAdapterConfig): MarketState {
 
   return {
     marketId: 'dev-market',
-    underlying: 'Ethereum Gas Stress Index',
+    underlying: 'Silica Compute Index',
     expiryMs,
     contractMultiplier: 1,
     tickSize: 1,

@@ -27,7 +27,7 @@ export async function viewCall<T>(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0',
-      id: 'gasx',
+      id: 'silica',
       method: 'query',
       params: {
         request_type: 'call_function',

@@ -1,5 +1,5 @@
 /**
- * Pure builders for the wallet transactions GASX prepares (never signs).
+ * Pure builders for the wallet transactions the adapter prepares (never signs).
  * Each returns a PreparedTransaction (types.ts) matching docs/near-abi.md:
  * receiver, method, args, gas and attached deposit. No network access.
  */

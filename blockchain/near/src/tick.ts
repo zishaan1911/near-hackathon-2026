@@ -1,9 +1,8 @@
 /**
- * Serverless cron tick. One call does everything the long-running
- * publisher and matcher services do per loop, plus rolling a settled
- * market into the next one: publish the Silica Compute Index (SCI) price, settle past expiry,
- * roll once settled, optionally quote demo liquidity, then match crossing orders. Every step is try/caught
- * on its own so one failure never blocks the others; failures are reported
+ * Serverless cron tick. One call does everything a market keeper
+ * needs per run: publish the Silica Compute Index (SCI) price, settle past
+ * expiry, roll once settled, optionally quote demo liquidity, then match
+ * crossing orders. Every step is try/caught on its own so one failure never blocks the others; failures are reported
  * in `TickReport.errors` (messages only, never keys).
  *
  * All signing uses one account (the publisher, which is also the matcher).
@@ -12,8 +11,7 @@
 import type { Account } from 'near-api-js';
 import { viewCall } from './client.js';
 import type { NearAdapterConfig } from './config.js';
-import { findMatches, type OrderLike } from './matcher.js';
-import { toOraclePrice } from './publisher.js';
+import { findMatches, toOraclePrice, type OrderLike } from './pricing.js';
 
 const TGAS_30 = '30000000000000';
 const PAGE_SIZE = 100;

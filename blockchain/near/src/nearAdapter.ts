@@ -1,6 +1,6 @@
 /**
- * NearChainAdapter: the concrete ChainAdapter (types.ts) — reads the gasx
- * contract over JSON-RPC (client.ts) and exposes only GASX-shaped types.
+ * NearChainAdapter: the concrete ChainAdapter (types.ts) — reads the Silica
+ * contract over JSON-RPC (client.ts) and exposes only the adapter's own types.
  * Composes fetchMarketState/parse* (marketState.ts) and the build*
  * functions (actionBuilders.ts). In dev-market mode (config.devMarket,
  * devMarket.ts) it serves the synthetic market, returns empty reads, and
@@ -46,7 +46,7 @@ export class DevMarketUnavailableError extends Error {
   constructor() {
     super(
       'The Silica contract is not deployed — running in dev-market mode. ' +
-        'Orders need GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN set ' +
+        'Orders need SILICA_NEAR_CONTRACT_ID and SILICA_NEAR_COLLATERAL_TOKEN set ' +
         '(see blockchain/near/.env.example).',
     );
     this.name = 'DevMarketUnavailableError';
@@ -68,7 +68,7 @@ export class NearChainAdapter implements ChainAdapter {
     if (config.devMarket) {
       console.warn(
         '[silica/near-adapter] dev-market mode: serving a synthetic market; ' +
-          'no transactions can be prepared. Set GASX_NEAR_DEV_MARKET=false once deployed.',
+          'no transactions can be prepared. Set SILICA_NEAR_DEV_MARKET=false once deployed.',
       );
     }
   }

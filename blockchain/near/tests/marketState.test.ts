@@ -11,7 +11,7 @@ import {
 describe('parseMarketView', () => {
   const baseView = {
     market_id: 3,
-    underlying: 'EGSI-1H',
+    underlying: 'SCI-1H',
     expiry_ms: 1700000000000,
     contract_multiplier: 10,
     tick_size: 1,
@@ -25,7 +25,7 @@ describe('parseMarketView', () => {
   it('parses all fields and builds the contract#market id', () => {
     const result = parseMarketView(baseView, 'gasx.testnet');
     expect(result.marketId).toBe('gasx.testnet#3');
-    expect(result.underlying).toBe('EGSI-1H');
+    expect(result.underlying).toBe('SCI-1H');
     expect(result.expiryMs).toBe(1700000000000);
     expect(result.contractMultiplier).toBe(10);
     expect(result.tickSize).toBe(1);

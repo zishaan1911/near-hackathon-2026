@@ -1,6 +1,6 @@
 /**
- * Reads and parses the gasx contract's `get_market` / `get_oracle` views
- * (docs/near-abi.md) into GASX's MarketState/OracleState (types.ts), plus
+ * Reads and parses the Silica contract's `get_market` / `get_oracle` views
+ * (docs/near-abi.md) into the adapter's MarketState/OracleState (types.ts), plus
  * the order/trade/account views.
  *
  * parseMarketView/parseOracleView/parseOrderView/parseTradeView are pure —

@@ -1,14 +1,11 @@
 /**
- * GASX's own view of NEAR — mirrors blockchain/sui's "adapter, not a
- * leaky wrapper" convention. Everything here is shaped for GASX's
- * callers (api/'s routes); the contract's snake_case JSON views
- * (docs/near-abi.md) don't cross this boundary.
+ * The adapter's own view of NEAR: an adapter, not a leaky wrapper.
+ * Everything here is shaped for the server's routes; the contract's
+ * snake_case JSON views (docs/near-abi.md) don't cross this boundary.
  */
 
-/** Live state of the EGSI-1H market — GET /api/v1/market's chain half
- * (orderbook/forecast come from elsewhere, this is the on-chain config +
- * oracle half). Field names match blockchain/sui's MarketState so the
- * frontend and API keep working unchanged. */
+/** Live state of the SCI-1H market: GET /api/v1/market's chain half
+ * (the on-chain config + oracle half; the orderbook comes from elsewhere). */
 export interface MarketState {
   /** `"<contractId>#<market_id>"` — the contract account plus the
    * contract's numbered market. */
@@ -31,14 +28,14 @@ export interface MarketState {
 }
 
 export interface OracleState {
-  /** The gasx contract account id — the oracle lives inside it. */
+  /** The Silica contract account id — the oracle lives inside it. */
   oracleId: string;
   price: number;
   hasPrice: boolean;
   lastUpdateMs: number;
   maxStalenessMs: number;
   /** A published price above this is rejected on-chain (update_price) —
-   * the EGSI 0-1000 scale's actual enforced ceiling. */
+   * the index scale's actual enforced ceiling. */
   maxPrice: number;
   /** Computed client-side from lastUpdateMs/maxStalenessMs against the
    * time the read happened — not read from chain. An approximation for
@@ -145,7 +142,7 @@ export interface ClaimParams {
   tradeId: number;
 }
 
-/** GASX's narrow view of NEAR. Implemented by NearChainAdapter; tests use
+/** The narrow view of NEAR. Implemented by NearChainAdapter; tests use
  * synthetic ABI JSON fixtures for the pure parsing logic and never touch
  * a live network. */
 export interface ChainAdapter {
