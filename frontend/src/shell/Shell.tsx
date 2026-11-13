@@ -11,6 +11,7 @@ import { Ask } from './Ask';
 export const NavSlotContext = createContext<HTMLElement | null>(null);
 
 const LINKS: ReadonlyArray<{ route: RouteId; to: string; label: string }> = [
+  { route: 'home', to: PATHS.home, label: 'Home' },
   { route: 'index', to: PATHS.index, label: 'Index' },
   { route: 'trade', to: PATHS.trade, label: 'Trade' },
   { route: 'portfolio', to: PATHS.portfolio, label: 'Portfolio' },
