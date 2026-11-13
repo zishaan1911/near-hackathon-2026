@@ -21347,7 +21347,7 @@ var require_discriminator = __commonJS({
     var util_1 = require_util();
     var error = {
       message: ({ params: { discrError, tagName } }) => discrError === types_1.DiscrError.Tag ? `tag "${tagName}" must be string` : `value of tag "${tagName}" must be in oneOf`,
-      params: ({ params: { discrError, tag, tagName } }) => (0, codegen_1._)`{error: ${discrError}, tag: ${tagName}, tagValue: ${tag}}`
+      params: ({ params: { discrError, tag: tag2, tagName } }) => (0, codegen_1._)`{error: ${discrError}, tag: ${tagName}, tagValue: ${tag2}}`
     };
     var def = {
       keyword: "discriminator",
@@ -21368,18 +21368,18 @@ var require_discriminator = __commonJS({
         if (!oneOf)
           throw new Error("discriminator: requires oneOf keyword");
         const valid = gen.let("valid", false);
-        const tag = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(tagName)}`);
-        gen.if((0, codegen_1._)`typeof ${tag} == "string"`, () => validateMapping(), () => cxt.error(false, { discrError: types_1.DiscrError.Tag, tag, tagName }));
+        const tag2 = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(tagName)}`);
+        gen.if((0, codegen_1._)`typeof ${tag2} == "string"`, () => validateMapping(), () => cxt.error(false, { discrError: types_1.DiscrError.Tag, tag: tag2, tagName }));
         cxt.ok(valid);
         function validateMapping() {
           const mapping = getMapping();
           gen.if(false);
           for (const tagValue in mapping) {
-            gen.elseIf((0, codegen_1._)`${tag} === ${tagValue}`);
+            gen.elseIf((0, codegen_1._)`${tag2} === ${tagValue}`);
             gen.assign(valid, applyTagSchema(mapping[tagValue]));
           }
           gen.else();
-          cxt.error(false, { discrError: types_1.DiscrError.Mapping, tag, tagName });
+          cxt.error(false, { discrError: types_1.DiscrError.Mapping, tag: tag2, tagName });
           gen.endIf();
         }
         function applyTagSchema(schemaProp) {
@@ -22198,23 +22198,23 @@ var require_discriminator2 = __commonJS({
         gen.endIf();
         cxt.ok(valid);
         function validateDiscriminator() {
-          const tag = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(schema)}`);
-          gen.if((0, codegen_1._)`${tag} === undefined`);
-          cxt.error(false, { discrError: types_1.DiscrError.Tag, tag });
-          gen.elseIf((0, codegen_1._)`typeof ${tag} == "string"`);
-          validateMapping(tag);
+          const tag2 = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(schema)}`);
+          gen.if((0, codegen_1._)`${tag2} === undefined`);
+          cxt.error(false, { discrError: types_1.DiscrError.Tag, tag: tag2 });
+          gen.elseIf((0, codegen_1._)`typeof ${tag2} == "string"`);
+          validateMapping(tag2);
           gen.else();
-          cxt.error(false, { discrError: types_1.DiscrError.Tag, tag }, { instancePath: schema });
+          cxt.error(false, { discrError: types_1.DiscrError.Tag, tag: tag2 }, { instancePath: schema });
           gen.endIf();
         }
-        function validateMapping(tag) {
+        function validateMapping(tag2) {
           gen.if(false);
           for (const tagValue in parentSchema.mapping) {
-            gen.elseIf((0, codegen_1._)`${tag} === ${tagValue}`);
+            gen.elseIf((0, codegen_1._)`${tag2} === ${tagValue}`);
             gen.assign(valid, applyTagSchema(tagValue));
           }
           gen.else();
-          cxt.error(false, { discrError: types_1.DiscrError.Mapping, tag }, { instancePath: schema, schemaPath: "mapping", parentSchema: true });
+          cxt.error(false, { discrError: types_1.DiscrError.Mapping, tag: tag2 }, { instancePath: schema, schemaPath: "mapping", parentSchema: true });
           gen.endIf();
         }
         function applyTagSchema(schemaProp) {
@@ -22623,11 +22623,11 @@ var require_serialize = __commonJS({
       const { gen, schema, data } = cxt;
       const { discriminator } = schema;
       gen.add(names_1.default.json, (0, codegen_1.str)`{${JSON.stringify(discriminator)}:`);
-      const tag = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(discriminator)}`);
-      serializeString({ ...cxt, data: tag });
+      const tag2 = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(discriminator)}`);
+      serializeString({ ...cxt, data: tag2 });
       gen.if(false);
       for (const tagValue in schema.mapping) {
-        gen.elseIf((0, codegen_1._)`${tag} === ${tagValue}`);
+        gen.elseIf((0, codegen_1._)`${tag2} === ${tagValue}`);
         const sch = schema.mapping[tagValue];
         serializeSchemaProperties({ ...cxt, schema: sch }, discriminator);
       }
@@ -23075,7 +23075,7 @@ var require_parse = __commonJS({
       gen.assign(data, (0, codegen_1._)`{}`);
       const startPos = gen.const("pos", names_1.default.jsonPos);
       const value = gen.let("value");
-      const tag = gen.let("tag");
+      const tag2 = gen.let("tag");
       tryParseItems(cxt, "}", () => {
         const key = gen.let("key");
         parseString({ ...cxt, data: key });
@@ -23083,8 +23083,8 @@ var require_parse = __commonJS({
         gen.if(
           (0, codegen_1._)`${key} === ${discriminator}`,
           () => {
-            parseString({ ...cxt, data: tag });
-            gen.assign((0, codegen_1._)`${data}[${key}]`, tag);
+            parseString({ ...cxt, data: tag2 });
+            gen.assign((0, codegen_1._)`${data}[${key}]`, tag2);
             gen.break();
           },
           () => parseEmpty({ ...cxt, data: value })
@@ -23092,10 +23092,10 @@ var require_parse = __commonJS({
         );
       });
       gen.assign(names_1.default.jsonPos, startPos);
-      gen.if((0, codegen_1._)`${tag} === undefined`);
+      gen.if((0, codegen_1._)`${tag2} === undefined`);
       parsingError(cxt, (0, codegen_1.str)`discriminator tag not found`);
       for (const tagValue in mapping) {
-        gen.elseIf((0, codegen_1._)`${tag} === ${tagValue}`);
+        gen.elseIf((0, codegen_1._)`${tag2} === ${tagValue}`);
         parseSchemaProperties({ ...cxt, schema: mapping[tagValue] }, discriminator);
       }
       gen.else();
@@ -23120,8 +23120,8 @@ var require_parse = __commonJS({
         parseDefinedProperty(cxt, key, optionalProperties);
         if (discriminator) {
           gen.elseIf((0, codegen_1._)`${key} === ${discriminator}`);
-          const tag = gen.let("tag");
-          parseString({ ...cxt, data: tag });
+          const tag2 = gen.let("tag");
+          parseString({ ...cxt, data: tag2 });
         }
         gen.else();
         if (additionalProperties) {
@@ -26962,7 +26962,7 @@ var require_merge_json_schemas = __commonJS({
       properties: mergeProperties,
       patternProperties: mergeObjects,
       additionalProperties: mergeSchemasResolver,
-      items: mergeItems,
+      items: mergeItems2,
       additionalItems: mergeAdditionalItems,
       definitions: mergeObjects,
       $defs: mergeObjects,
@@ -27030,7 +27030,7 @@ var require_merge_json_schemas = __commonJS({
       }
       return additionalItems;
     }
-    function mergeItems(keyword, values2, mergedSchema, schemas, options) {
+    function mergeItems2(keyword, values2, mergedSchema, schemas, options) {
       let maxArrayItemsLength = 0;
       for (const itemsSchema of values2) {
         if (Array.isArray(itemsSchema)) {
@@ -40869,10 +40869,10 @@ var DER = {
   Err: DERErr,
   // Basic building block is TLV (Tag-Length-Value)
   _tlv: {
-    encode: (tag, data) => {
+    encode: (tag2, data) => {
       const { Err: E } = DER;
-      asafenumber(tag, "tag");
-      if (tag < 0 || tag > 255)
+      asafenumber(tag2, "tag");
+      if (tag2 < 0 || tag2 > 255)
         throw new E("tlv.encode: wrong tag");
       if (typeof data !== "string")
         throw new TypeError('"data" expected string, got type=' + typeof data);
@@ -40883,17 +40883,17 @@ var DER = {
       if (len.length / 2 & 128)
         throw new E("tlv.encode: long form length too big");
       const lenLen = dataLen > 127 ? numberToHexUnpadded(len.length / 2 | 128) : "";
-      const t = numberToHexUnpadded(tag);
+      const t = numberToHexUnpadded(tag2);
       return t + lenLen + len + data;
     },
     // v - value, l - left bytes (unparsed)
-    decode(tag, data) {
+    decode(tag2, data) {
       const { Err: E } = DER;
       data = abytes2(data, void 0, "DER data");
       let pos = 0;
-      if (tag < 0 || tag > 255)
+      if (tag2 < 0 || tag2 > 255)
         throw new E("tlv.encode: wrong tag");
-      if (data.length < 2 || data[pos++] !== tag)
+      if (data.length < 2 || data[pos++] !== tag2)
         throw new E("tlv.decode: wrong tlv");
       const first = data[pos++];
       const isLong = !!(first & 128);
@@ -52481,6 +52481,183 @@ function registerMarketRoutes(app, deps) {
   });
 }
 
+// src/news.ts
+var HN_QUERIES = ["GPU", "Nvidia", "data center", "AI compute", "bitcoin mining"];
+var GOOGLE_QUERY = 'GPU prices OR "AI compute" OR "data center" OR Nvidia when:2d';
+var ON_TOPIC = /\b(gpus?|nvidia|amd|intel|tsmc|chips?|semiconductors?|data ?cent(er|re)s?|compute|inference|llms?|ai|openai|anthropic|cloud|aws|azure|bitcoin|hashrate|mining|miners?|ethereum|gas fees?|supercomputers?)\b/i;
+function isOnTopic(title) {
+  return ON_TOPIC.test(title);
+}
+var MAX_ITEMS = 30;
+var MAX_AGE_MS = 3 * 24 * 60 * 60 * 1e3;
+var CACHE_TTL_MS2 = 10 * 60 * 1e3;
+var TIMEOUT_MS2 = 8e3;
+function decodeEntities(s) {
+  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_m, n) => safeCodePoint(Number(n))).replace(/&#x([0-9a-fA-F]+);/g, (_m, n) => safeCodePoint(parseInt(n, 16))).replace(/&amp;/g, "&");
+}
+function safeCodePoint(n) {
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return "";
+  }
+}
+function tag(block, name) {
+  const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`).exec(block);
+  return m ? decodeEntities(m[1]).trim() : "";
+}
+function safeUrl(raw) {
+  if (typeof raw !== "string") return null;
+  try {
+    const u = new URL(raw.trim());
+    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+function parseGoogleRss(xml) {
+  const out = [];
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const block = m[1];
+    let title = tag(block, "title");
+    const url = safeUrl(tag(block, "link"));
+    const time = Date.parse(tag(block, "pubDate"));
+    if (!title || !url || !Number.isFinite(time)) continue;
+    let source = tag(block, "source");
+    const idx = title.lastIndexOf(" - ");
+    if (idx > 0) {
+      const publisher = title.slice(idx + 3).trim();
+      title = title.slice(0, idx).trim();
+      if (!source) source = publisher;
+    }
+    if (!title) continue;
+    out.push({
+      id: `google:${url}`,
+      title,
+      url,
+      source: source || "Google News",
+      publishedAt: new Date(time).toISOString(),
+      via: "google"
+    });
+  }
+  return out;
+}
+function mapHn(payload) {
+  const hits = payload?.hits;
+  if (!Array.isArray(hits)) return [];
+  const out = [];
+  for (const h of hits) {
+    if (!h || typeof h.title !== "string" || !h.title.trim() || typeof h.objectID !== "string") continue;
+    const time = typeof h.created_at === "string" ? Date.parse(h.created_at) : NaN;
+    if (!Number.isFinite(time)) continue;
+    const url = safeUrl(h.url) ?? `https://news.ycombinator.com/item?id=${encodeURIComponent(h.objectID)}`;
+    let source = "Hacker News";
+    try {
+      source = new URL(url).hostname.replace(/^www\./, "");
+      if (source === "news.ycombinator.com") source = "Hacker News";
+    } catch {
+    }
+    out.push({
+      id: `hn:${h.objectID}`,
+      title: h.title.trim(),
+      url,
+      source,
+      publishedAt: new Date(time).toISOString(),
+      via: "hn"
+    });
+  }
+  return out;
+}
+function normTitle(t) {
+  return t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+function normUrl(u) {
+  try {
+    const x = new URL(u);
+    return `${x.hostname.replace(/^www\./, "")}${x.pathname.replace(/\/+$/, "")}${x.search}`.toLowerCase();
+  } catch {
+    return u;
+  }
+}
+function mergeItems(lists, nowMs) {
+  const all = lists.flat().filter((i) => {
+    const t = Date.parse(i.publishedAt);
+    return Number.isFinite(t) && nowMs - t <= MAX_AGE_MS && t <= nowMs + 60 * 60 * 1e3;
+  }).sort((a, b2) => Date.parse(b2.publishedAt) - Date.parse(a.publishedAt));
+  const seenTitles = /* @__PURE__ */ new Set();
+  const seenUrls = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const i of all) {
+    const nt = normTitle(i.title);
+    const nu = normUrl(i.url);
+    if (seenTitles.has(nt) || seenUrls.has(nu)) continue;
+    seenTitles.add(nt);
+    seenUrls.add(nu);
+    out.push(i);
+    if (out.length >= MAX_ITEMS) break;
+  }
+  return out;
+}
+async function getText(fetchImpl, url) {
+  const res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS2), headers: { "user-agent": "silica-news/1.0" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+async function fetchHn(fetchImpl) {
+  const lists = await Promise.allSettled(
+    HN_QUERIES.map(async (q2) => {
+      const url = `https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=30&query=${encodeURIComponent(q2)}`;
+      return mapHn(JSON.parse(await getText(fetchImpl, url))).filter((i) => isOnTopic(i.title));
+    })
+  );
+  const ok = lists.filter((l) => l.status === "fulfilled");
+  if (ok.length === 0) throw new Error("Hacker News unavailable");
+  return ok.flatMap((l) => l.value);
+}
+async function fetchGoogle(fetchImpl) {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(GOOGLE_QUERY)}&hl=en-US&gl=US&ceid=US:en`;
+  return parseGoogleRss(await getText(fetchImpl, url));
+}
+function createNewsService(opts = {}) {
+  const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  const now = opts.now ?? Date.now;
+  const ttl = opts.cacheTtlMs ?? CACHE_TTL_MS2;
+  let cached = null;
+  let inflight = null;
+  async function load() {
+    const [hn, google] = await Promise.allSettled([fetchHn(fetchImpl), fetchGoogle(fetchImpl)]);
+    const t = now();
+    const items = mergeItems(
+      [hn.status === "fulfilled" ? hn.value : [], google.status === "fulfilled" ? google.value : []],
+      t
+    );
+    return { asOf: new Date(t).toISOString(), items };
+  }
+  return async () => {
+    const t = now();
+    if (cached && t - cached.at < ttl) return cached.value;
+    if (!inflight) {
+      inflight = load().catch(() => ({ asOf: new Date(now()).toISOString(), items: [] })).then((value) => {
+        if (value.items.length > 0) cached = { at: now(), value };
+        return value;
+      }).finally(() => {
+        inflight = null;
+      });
+    }
+    return inflight;
+  };
+}
+
+// src/routes/news.ts
+var NEWS_CACHE_CONTROL = "public, s-maxage=300, stale-while-revalidate=600";
+function registerNewsRoutes(app, opts = {}) {
+  const getNews = opts.getNews ?? createNewsService(opts);
+  app.get("/api/v1/news", async (_request, reply) => {
+    const body = await getNews();
+    return reply.header("Cache-Control", NEWS_CACHE_CONTROL).send(body);
+  });
+}
+
 // src/riskPolicy.ts
 function accept() {
   return { accepted: true };
@@ -52687,6 +52864,7 @@ function buildServer(deps) {
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
   registerChatRoutes(app, deps);
+  registerNewsRoutes(app);
   if (deps.tick) registerTickRoute(app, deps.tick);
   app.setErrorHandler((error, request, reply) => {
     request.log.error(error);
