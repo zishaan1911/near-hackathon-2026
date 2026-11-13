@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fastify app factory. Takes dependencies as plain constructor
  * arguments (GatewayDeps) rather than reaching for globals, so tests can
  * inject fakes implementing ChainAdapter and
@@ -16,6 +16,7 @@ import { registerAccountRoutes } from './routes/account.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerIndicesRoutes } from './routes/indices.js';
 import { registerMarketRoutes } from './routes/market.js';
+import { registerNewsRoutes } from './routes/news.js';
 import { registerOrderRoutes } from './routes/orders.js';
 import { registerTickRoute, type TickRouteDeps } from './tick-route.js';
 
@@ -52,6 +53,7 @@ export function buildServer(deps: GatewayDeps): FastifyInstance {
   registerOrderRoutes(app, deps);
   registerAccountRoutes(app, deps);
   registerChatRoutes(app, deps);
+  registerNewsRoutes(app);
   if (deps.tick) registerTickRoute(app, deps.tick);
 
   // DevMarketUnavailableError (blockchain/near's
