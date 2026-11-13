@@ -52,8 +52,35 @@ function SettleLine({ snap }: { snap: MarketSnapshot }) {
   );
 }
 
+/** "just now", "3 min ago", "2 h ago" for the on-chain price's age. */
+export function formatAge(updatedMs: number | undefined, nowMs: number): string | null {
+  if (updatedMs === undefined || !Number.isFinite(updatedMs)) return null;
+  const minutes = Math.floor(Math.max(0, nowMs - updatedMs) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  return `${Math.floor(minutes / 60)} h ago`;
+}
+
+function OnChainLine({ snap }: { snap: MarketSnapshot }) {
+  const now = useNow(30_000);
+  const { market } = snap;
+  if (!market.oracleHasPrice || !Number.isFinite(market.oraclePrice)) return null;
+  const age = formatAge(market.oracleUpdatedMs, now);
+  return (
+    <p className="muted num market-sub">
+      <span>
+        On-chain price {formatPoints(market.oraclePrice)}
+        {age ? ` · updated ${age}` : ''}
+      </span>
+    </p>
+  );
+}
+
 function MarketHead({ snap }: { snap: MarketSnapshot }) {
-  const price = priceOf(snap);
+  // Headline is the live index, the same number Home shows. The on-chain
+  // oracle price, which trades settle against, sits on its own line below.
+  const live = snap.index?.level;
+  const price = typeof live === 'number' && Number.isFinite(live) ? live : priceOf(snap);
   const base = snap.index?.base ?? 1000;
   const change = formatChange(price, base);
   const hint = useHint(
@@ -82,6 +109,7 @@ function MarketHead({ snap }: { snap: MarketSnapshot }) {
         <span aria-hidden="true">·</span>
         <SettleLine snap={snap} />
       </p>
+      <OnChainLine snap={snap} />
     </header>
   );
 }
