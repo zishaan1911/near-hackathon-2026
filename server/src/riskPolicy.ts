@@ -1,21 +1,19 @@
-﻿/**
- * ARCHITECTURE.md §8's Hard Risk Policy: "AI can request an action. It
- * cannot bypass policy." — enforced here, outside any model, per §8's
- * own framing ("Enforced outside the language model, in the API/
- * contracts"). Pure functions, no I/O, fully unit-tested.
+/**
+ * Hard risk policy for order preparation, enforced here in the server, not
+ * in the chat assistant or the client. Pure functions, no I/O, fully
+ * unit-tested.
  *
- * Not every documented policy constant is enforced by every check below
- * yet — each function's doc comment says exactly which constants it
- * applies and why the others don't apply to that particular action. See
- * README.md for the full accounting.
+ * Not every policy constant is enforced by every check below yet; each
+ * function's doc comment says exactly which constants it applies and why
+ * the others don't apply to that particular action.
  */
 
 export interface RiskPolicyConfig {
   /** MAX_ORDER_CONTRACTS — cap on a single order's quantity. */
   maxOrderContracts: number;
   /** MAX_POSITION_CONTRACTS — cap on a trader's net position size.
-   * Defined per ARCHITECTURE.md §8 but NOT enforced by checkOrderRisk
-   * below: doing so needs a live position read this gateway doesn't
+   * NOT enforced by checkOrderRisk below: doing so needs a live position
+   * read this server doesn't
    * have yet (no indexer/position-query path built). Revisit once one
    * exists. */
   maxPositionContracts: number;
@@ -40,7 +38,7 @@ function reject(reason: string): RiskCheckResult {
 export interface OrderRiskCheckInput {
   price: number;
   quantity: number;
-  /** From the live Market object (blockchain/sui's MarketState.tickSize).
+  /** From the live Market object (MarketState.tickSize).
    * 0 disables the tick-alignment check. */
   tickSize: number;
   marketPaused: boolean;
@@ -51,8 +49,7 @@ export interface OrderRiskCheckInput {
 }
 
 /**
- * Pre-trade risk check for manual order placement (ARCHITECTURE.md §9's
- * "Prepare order (pre-trade risk checks)"). Applies MAX_ORDER_CONTRACTS
+ * Pre-trade risk check for manual order placement. Applies MAX_ORDER_CONTRACTS
  * and, when a reference price is supplied, MAX_SLIPPAGE — see
  * RiskPolicyConfig's field docs for which constants don't apply here and
  * why.

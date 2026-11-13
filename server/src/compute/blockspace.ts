@@ -1,7 +1,7 @@
 /**
  * Ethereum blockspace price: $/1M gas = median baseFeePerGas (gwei) * 1e-3 *
  * ETH/USD. (1 gwei = 1e-9 ETH; 1M gas = 1e6 gas, so gwei * 1e-3 ETH per 1M gas.)
- * Samples come straight from Ethereum JSON-RPC; no EGSI involved.
+ * Samples come straight from Ethereum JSON-RPC.
  */
 import { fetchJson, isRecord, num } from './http.js';
 import { median } from './stats.js';

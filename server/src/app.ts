@@ -1,10 +1,11 @@
-﻿/**
+/**
  * Shared composition root: builds the real GatewayDeps (config, database,
  * NEAR adapter, compute index service, engine layer) and the Fastify app. Used by the
  * local entrypoint (src/index.ts) and the Vercel function (api/index.ts).
  */
 import type { FastifyInstance } from 'fastify';
-import { NearChainAdapter } from '@gasx/near-adapter';
+import { NearChainAdapter } from '@silica/near-adapter';
+import { readEnv } from './env.js';
 import { createComputeService } from './compute/service.js';
 import { loadGatewayConfig } from './config.js';
 import { createDatabase } from './db.js';
@@ -25,8 +26,8 @@ export function createGatewayDeps(env: NodeJS.ProcessEnv = process.env): Gateway
 
   // One compute service for the whole process: the indices route, market
   // route, chat and the tick all share its cache.
-  const ethRpcUrl = process.env.GASX_ETH_RPC_URL || undefined;
-  const getCci = createComputeService({
+  const ethRpcUrl = readEnv('ETH_RPC_URL') || undefined;
+  const getSci = createComputeService({
     fetchImpl: (input, init) => fetch(input, init),
     ...(ethRpcUrl ? { ethRpcUrl } : {}),
   });
@@ -43,12 +44,12 @@ export function createGatewayDeps(env: NodeJS.ProcessEnv = process.env): Gateway
       chainAdapter,
     ),
     chainAdapter,
-    getCci,
+    getSci,
     riskPolicy: config.riskPolicy,
     groq: config.groq,
     tick: {
       config: config.near,
-      getPrice: async () => (await getCci()).index.level,
+      getPrice: async () => (await getSci()).index.level,
     },
     logger: true,
   };

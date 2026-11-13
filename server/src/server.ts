@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Fastify app factory. Takes dependencies as plain constructor
  * arguments (GatewayDeps) rather than reaching for globals, so tests can
  * inject fakes implementing ChainAdapter and
@@ -6,7 +6,7 @@
  * Fastify's `.inject()` without a live network connection anywhere.
  */
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { ChainAdapter } from '@gasx/near-adapter';
+import type { ChainAdapter } from '@silica/near-adapter';
 import type { CciResponse } from './compute/service.js';
 import type { HistorySources } from './compute/historySources.js';
 import type { Database } from './db.js';
@@ -24,7 +24,7 @@ export interface GatewayDeps {
   chainAdapter: ChainAdapter;
   /** Shared Compute Index service (cached, never throws in production).
    * One instance serves the indices route, the market route, chat and the tick. */
-  getCci: () => Promise<CciResponse>;
+  getSci: () => Promise<CciResponse>;
   riskPolicy: RiskPolicyConfig;
   /** Optional off-chain depth/quote layer (the C++ engine). Null runs
    * the gateway exactly as before, without indicative depth. */

@@ -1,7 +1,7 @@
 /**
  * Account routes: prepares (never signs) the collateral transactions a
  * trader needs around trading — deposit, withdraw, claim — and reads the
- * trader's balance, orders and trades from the gasx contract. There is
+ * trader's balance, orders and trades from the Silica contract. There is
  * no open-account step on NEAR: a deposit credits the contract's
  * `available` balance directly (docs/near-abi.md).
  */

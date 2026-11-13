@@ -12,13 +12,13 @@ const riskPolicy: RiskPolicyConfig = {
 };
 
 let app: FastifyInstance;
-let getCci: () => Promise<CciResponse>;
+let getSci: () => Promise<CciResponse>;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 function buildApp(groq?: { apiKey: string | undefined; model: string }) {
   const deps: GatewayDeps = {
     chainAdapter: new FakeChainAdapter(),
-    getCci: () => getCci(),
+    getSci: () => getSci(),
     riskPolicy,
     logger: false,
     groq,
@@ -36,7 +36,7 @@ function groqSuccess(content: string) {
 }
 
 beforeEach(() => {
-  getCci = async () => makeCciResponse(1042.6);
+  getSci = async () => makeCciResponse(1042.6);
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -54,7 +54,7 @@ describe('POST /api/v1/chat', () => {
       payload: { messages: [{ role: 'user', content: 'hi' }] },
     });
     expect(res.statusCode).toBe(501);
-    expect(res.json().error).toMatch(/GASX_API_GROQ_API_KEY/);
+    expect(res.json().error).toMatch(/SILICA_API_GROQ_API_KEY/);
     // No API key configured means it must never even try to reach Groq.
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -142,13 +142,12 @@ describe('POST /api/v1/chat', () => {
     expect(systemMessage).toMatch(/SCI = 1043/);
     expect(systemMessage).toMatch(/GPU rental: 1040/);
     expect(systemMessage).toMatch(/Ethereum blockspace: down/);
-    expect(systemMessage).not.toMatch(/EGSI|gas futures/i);
     expect(systemMessage).toMatch(/not a financial advisor/);
   });
 
   it('tells the model plainly when no live reading exists, rather than omitting the topic', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    getCci = async () => makeCciResponse(null);
+    getSci = async () => makeCciResponse(null);
     fetchMock.mockResolvedValue(groqSuccess('ok'));
 
     await app.inject({
@@ -196,7 +195,7 @@ describe('POST /api/v1/chat', () => {
 
   it('does not fail the whole request when the compute service throws for context', async () => {
     app = buildApp({ apiKey: 'test-key', model: 'openai/gpt-oss-20b' });
-    getCci = async () => {
+    getSci = async () => {
       throw new Error('compute down');
     };
     fetchMock.mockResolvedValue(groqSuccess('ok'));

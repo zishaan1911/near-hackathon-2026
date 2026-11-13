@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import type { NearAdapterConfig, TickContext, TickReport } from '@gasx/near-adapter';
+import type { NearAdapterConfig, TickContext, TickReport } from '@silica/near-adapter';
 import { liquidityContext, registerTickRoute } from '../src/tick-route.js';
 
 const config: NearAdapterConfig = {
@@ -12,7 +12,7 @@ const config: NearAdapterConfig = {
 };
 
 const report: TickReport = { published: 400, matched: [], errors: [] };
-const KEY = { GASX_NEAR_PUBLISHER_PRIVATE_KEY: 'ed25519:test-only' };
+const KEY = { SILICA_NEAR_PUBLISHER_PRIVATE_KEY: 'ed25519:test-only' };
 
 function build(env: NodeJS.ProcessEnv, opts: { config?: NearAdapterConfig; run?: () => Promise<TickReport> } = {}) {
   const app = Fastify({ logger: false });
@@ -141,18 +141,25 @@ describe('POST /api/v1/market/poke', () => {
 });
 
 describe('liquidityContext', () => {
-  it('is empty unless GASX_DEMO_LIQUIDITY is exactly true and a publisher account is set', () => {
+  it('still honours the legacy GASX_ names', () => {
+    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: 'true', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' }).signerAccountId).toBe('p.testnet');
+    expect(
+      liquidityContext({ SILICA_DEMO_LIQUIDITY: 'true', SILICA_NEAR_PUBLISHER_ACCOUNT_ID: 'new.testnet', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'old.testnet' }).signerAccountId,
+    ).toBe('new.testnet');
+  });
+
+  it('is empty unless SILICA_DEMO_LIQUIDITY is exactly true and a publisher account is set', () => {
     expect(liquidityContext({})).toEqual({});
-    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: 'true' })).toEqual({});
-    expect(liquidityContext({ GASX_DEMO_LIQUIDITY: '1', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' })).toEqual({});
+    expect(liquidityContext({ SILICA_DEMO_LIQUIDITY: 'true' })).toEqual({});
+    expect(liquidityContext({ SILICA_DEMO_LIQUIDITY: '1', SILICA_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' })).toEqual({});
   });
 
   it('uses defaults and the quantity override', () => {
-    const base = { GASX_DEMO_LIQUIDITY: 'true', GASX_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' };
+    const base = { SILICA_DEMO_LIQUIDITY: 'true', SILICA_NEAR_PUBLISHER_ACCOUNT_ID: 'p.testnet' };
     expect(liquidityContext(base)).toEqual({
       signerAccountId: 'p.testnet',
       liquidity: { quantity: 100, offsetTicks: 1, maxRepriceDistance: 3 },
     });
-    expect(liquidityContext({ ...base, GASX_DEMO_LIQUIDITY_QUANTITY: '1' }).liquidity?.quantity).toBe(1);
+    expect(liquidityContext({ ...base, SILICA_DEMO_LIQUIDITY_QUANTITY: '1' }).liquidity?.quantity).toBe(1);
   });
 });

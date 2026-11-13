@@ -6,6 +6,7 @@ import type { Candle } from '../db.js';
 import { createBackcastSource, type Backcast, type BackcastPoint } from './backcast.js';
 import { createBackfillSource, createMarketDataSource, type Backfill } from './history.js';
 import { createSettlementReader, type Settlement, type SettlementChain } from './settlements.js';
+import { readEnv } from '../env.js';
 import { DEFAULT_ETH_RPC_URL } from './blockspace.js';
 import type { FetchImpl } from './types.js';
 
@@ -91,7 +92,7 @@ export function resolveHistorySources(
     r = createHistorySources({
       fetchImpl: opts.fetchImpl ?? ((input, init) => fetch(input, init)),
       chain: deps.chainAdapter,
-      rpcUrl: opts.rpcUrl ?? (process.env.GASX_ETH_RPC_URL || undefined),
+      rpcUrl: opts.rpcUrl ?? (readEnv('ETH_RPC_URL') || undefined),
       now: opts.now,
     });
     resolved.set(deps, r);

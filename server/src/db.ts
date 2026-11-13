@@ -1,8 +1,6 @@
 /**
- * Postgres (Supabase) access for the API gateway — the only service that
- * talks to the database (ARCHITECTURE.md §2: the gateway owns "indexing",
- * and Storage holds "durable state; live index/orderbook cached in API
- * memory").
+ * Postgres (Supabase) access for the API server, the only service that
+ * talks to the database.
  *
  * Two deliberate design points:
  *
@@ -14,7 +12,7 @@
  *    time these are called. Reads are separate — those propagate, since
  *    a caller asking for history explicitly wants to know if it failed.
  *
- * 2. **The database is optional.** With no GASX_API_DATABASE_URL
+ * 2. **The database is optional.** With no SILICA_API_DATABASE_URL
  *    configured, `createDatabase` returns null and the gateway runs
  *    exactly as before, just without durable state. That keeps the
  *    dev-market path (blockchain/near's devMarket.ts) working with no

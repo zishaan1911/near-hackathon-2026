@@ -1,8 +1,8 @@
 /**
- * ARCHITECTURE.md §9's Trade Flow: "FE->>API: Prepare order (pre-trade
- * risk checks); API-->>FE: transaction payload." Every response here is
- * a PreparedTransaction (blockchain/near) for the frontend's wallet to
- * sign — this gateway never signs or broadcasts anything.
+ * Order preparation: the frontend asks the server to prepare an order (with
+ * pre-trade risk checks) and gets back a transaction payload. Every response
+ * here is a PreparedTransaction (blockchain/near) for the frontend's wallet to
+ * sign; this server never signs or broadcasts anything.
  */
 import type { FastifyInstance } from 'fastify';
 import type { GatewayDeps } from '../server.js';
@@ -90,9 +90,9 @@ export function registerOrderRoutes(app: FastifyInstance, deps: GatewayDeps): vo
     }
 
     const prepared = await deps.chainAdapter.preparePlaceOrder(validated);
-    // 'prepared', not 'executed': the gateway cannot know whether the
-    // user's wallet went on to sign this. Only the indexer could tell
-    // us that, and it does not exist yet (see database/README.md).
+    // 'prepared', not 'executed': the server cannot know whether the
+    // user's wallet went on to sign this. Only an indexer could tell us
+    // that, and none exists yet.
     await deps.db?.recordPreparedOrder({
       trader: validated.trader,
       marginAccount,

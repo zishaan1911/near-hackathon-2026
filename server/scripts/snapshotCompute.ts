@@ -1,12 +1,13 @@
 /**
- * Live CCI snapshot.
+ * Live SCI snapshot.
  *   npx tsx scripts/snapshotCompute.ts               prints the live level and per-component quote counts
  *   npx tsx scripts/snapshotCompute.ts --write-base  fetches live quotes and rewrites src/compute/base.ts
  *                                                    (BASE_DATE = today, BASE_QUOTES, BASE_VALUES)
- * Optional env: GASX_ETH_RPC_URL (default https://ethereum-rpc.publicnode.com).
+ * Optional env: SILICA_ETH_RPC_URL (default https://ethereum-rpc.publicnode.com).
  */
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { readEnv } from '../src/env.js';
 import { createBlockspaceSource } from '../src/compute/blockspace.js';
 import { fetchAllComponents } from '../src/compute/fetchers.js';
 import { median } from '../src/compute/stats.js';
@@ -14,7 +15,7 @@ import { createComputeService } from '../src/compute/service.js';
 import { COMPONENT_IDS } from '../src/compute/types.js';
 
 const fetchImpl = (input: string, init?: RequestInit): Promise<Response> => fetch(input, init);
-const ethRpcUrl = process.env.GASX_ETH_RPC_URL || undefined;
+const ethRpcUrl = readEnv('ETH_RPC_URL') || undefined;
 
 async function writeBase(): Promise<void> {
   const blockspace = createBlockspaceSource({ fetchImpl, ...(ethRpcUrl ? { rpcUrl: ethRpcUrl } : {}) });
@@ -60,17 +61,17 @@ ${valueLines}
 }
 
 async function live(): Promise<void> {
-  const getCci = createComputeService({ fetchImpl, ttlMs: 0, ...(ethRpcUrl ? { ethRpcUrl } : {}) });
-  const cci = await getCci();
-  console.log(`CCI level: ${cci.index.level} (degraded: ${cci.index.degraded}, base ${cci.index.baseDate})`);
-  for (const c of cci.components) {
+  const getSci = createComputeService({ fetchImpl, ttlMs: 0, ...(ethRpcUrl ? { ethRpcUrl } : {}) });
+  const sci = await getSci();
+  console.log(`SCI level: ${sci.index.level} (degraded: ${sci.index.degraded}, base ${sci.index.baseDate})`);
+  for (const c of sci.components) {
     console.log(
       `  ${c.id.padEnd(15)} quotes ${c.quotes.ok}/${c.quotes.total}  relative ${c.relative}  value ${c.value}  ${c.status}${c.error ? ' ' + c.error : ''}`,
     );
     const d = c.detail?.discarded;
     if (d) console.log(`    discarded: ${d}`);
   }
-  console.log(JSON.stringify(cci, null, 2));
+  console.log(JSON.stringify(sci, null, 2));
 }
 
 await (process.argv.includes('--write-base') ? writeBase() : live());

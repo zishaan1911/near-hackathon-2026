@@ -35,8 +35,8 @@ async function build(opts: { fetchImpl?: FetchImpl; env?: NodeJS.ProcessEnv; db?
   const app = Fastify();
   const db = opts.db === undefined ? null : opts.db;
   const fetchImpl = opts.fetchImpl ?? healthyFetch();
-  const getCci = createComputeService({ fetchImpl, now: () => clock.t, baseQuotes: await baseFromMock() });
-  registerIndicesRoutes(app, { db: db as unknown as Database | null, getCci } as unknown as GatewayDeps, {
+  const getSci = createComputeService({ fetchImpl, now: () => clock.t, baseQuotes: await baseFromMock() });
+  registerIndicesRoutes(app, { db: db as unknown as Database | null, getSci } as unknown as GatewayDeps, {
     fetchImpl,
     now: () => clock.t,
     env: opts.env ?? {},

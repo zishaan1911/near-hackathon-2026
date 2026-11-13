@@ -9,6 +9,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { resolveHistorySources } from '../compute/historySources.js';
+import { readEnv } from '../env.js';
 import { METHODOLOGY_VERSION } from '../compute/service.js';
 import type { FetchImpl } from '../compute/types.js';
 import type { GatewayDeps } from '../server.js';
@@ -16,7 +17,7 @@ import type { GatewayDeps } from '../server.js';
 export interface IndicesRouteOptions {
   fetchImpl?: FetchImpl;
   now?: () => number;
-  /** Defaults to process.env; read per request (CRON_SECRET) and once (GASX_ETH_RPC_URL). */
+  /** Defaults to process.env; read per request (CRON_SECRET) and once (SILICA_ETH_RPC_URL). */
   env?: NodeJS.ProcessEnv;
 }
 
@@ -47,14 +48,14 @@ export function registerIndicesRoutes(
 ): void {
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  const ethRpcUrl = env.GASX_ETH_RPC_URL || undefined;
+  const ethRpcUrl = readEnv('ETH_RPC_URL', env) || undefined;
   // The compute service is shared (built once in app.ts) so every consumer
   // hits the same cache.
-  const getCci = deps.getCci;
+  const getSci = deps.getSci;
   const sources = resolveHistorySources(deps, { fetchImpl, rpcUrl: ethRpcUrl, now: opts.now });
 
   app.get('/api/v1/indices/compute', async (_request, reply) => {
-    const body = await getCci();
+    const body = await getSci();
     return reply.header('Cache-Control', CURRENT_CACHE_CONTROL).send(body);
   });
 
@@ -77,13 +78,13 @@ export function registerIndicesRoutes(
     if (!secret) return reply.status(503).send({ error: 'cron snapshot is not configured' });
     if (!bearerMatches(request, secret)) return reply.status(401).send({ error: 'unauthorized' });
 
-    const cci = await getCci();
-    const level = cci.index.level;
+    const sci = await getSci();
+    const level = sci.index.level;
     let recorded = false;
     if (deps.db && level !== null) {
       recorded = await deps.db.recordComputeIndexSnapshot({
         level,
-        components: cci.components,
+        components: sci.components,
         methodologyVersion: METHODOLOGY_VERSION,
       });
     }

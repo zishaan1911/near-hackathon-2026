@@ -12,7 +12,7 @@ import type {
   PreparedTransaction,
   TradeView,
   WithdrawParams,
-} from '@gasx/near-adapter';
+} from '@silica/near-adapter';
 import type { CciResponse } from '../src/compute/service.js';
 
 export function makeMarketState(overrides: Partial<MarketState> = {}): MarketState {

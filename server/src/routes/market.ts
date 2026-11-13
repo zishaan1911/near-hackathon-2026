@@ -59,15 +59,15 @@ export function registerMarketRoutes(app: FastifyInstance, deps: GatewayDeps): v
       status: 'ok' | 'down';
     }> = [];
     try {
-      const cci = await deps.getCci();
+      const sci = await deps.getSci();
       index = {
-        level: cci.index.level,
-        base: cci.index.base,
-        baseDate: cci.index.baseDate,
-        asOf: cci.index.asOf,
-        degraded: cci.index.degraded,
+        level: sci.index.level,
+        base: sci.index.base,
+        baseDate: sci.index.baseDate,
+        asOf: sci.index.asOf,
+        degraded: sci.index.degraded,
       };
-      pillars = cci.components.map((c) => ({
+      pillars = sci.components.map((c) => ({
         id: c.id,
         label: c.label,
         level: c.level,

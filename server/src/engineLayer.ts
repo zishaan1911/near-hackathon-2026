@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The off-chain depth and quote layer, in pure TypeScript.
  *
  * What this is NOT: a replacement for on-chain matching. The NEAR
@@ -18,7 +18,7 @@
  * Depth is real; quotes stay explicitly indicative. The label travels with
  * the data rather than living only in this comment.
  */
-import type { ChainAdapter } from '@gasx/near-adapter';
+import type { ChainAdapter } from '@silica/near-adapter';
 
 export interface EngineConfig {
   contractMultiplier: number;

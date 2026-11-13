@@ -26,7 +26,7 @@ export interface ComputeServiceOptions {
   fetchImpl: FetchImpl;
   now?: () => number;
   ttlMs?: number;
-  /** Ethereum JSON-RPC URL (GASX_ETH_RPC_URL). */
+  /** Ethereum JSON-RPC URL (SILICA_ETH_RPC_URL). */
   ethRpcUrl?: string;
   baseQuotes?: Record<string, number>;
   baseValues?: Record<ComponentId, number>;

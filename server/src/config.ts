@@ -1,14 +1,15 @@
-﻿/**
- * Environment-driven configuration for the API gateway. Copy .env.example
+/**
+ * Environment-driven configuration for the API server. Copy .env.example
  * to .env and fill in real values.
  */
-import { loadConfigFromEnv as loadNearConfig, type NearAdapterConfig } from '@gasx/near-adapter';
+import { loadConfigFromEnv as loadNearConfig, type NearAdapterConfig } from '@silica/near-adapter';
+import { readEnv } from './env.js';
 import type { RiskPolicyConfig } from './riskPolicy.js';
 
 export interface GatewayConfig {
   port: number;
-  /** MySQL connection URL. Undefined disables persistence entirely —
-   * the gateway then runs without durable state (see src/db.ts). */
+  /** Postgres (Supabase) connection URL. Undefined disables persistence
+   * entirely: the server then runs without durable state (see src/db.ts). */
   databaseUrl: string | undefined;
   near: NearAdapterConfig;
   riskPolicy: RiskPolicyConfig;
@@ -19,45 +20,40 @@ export interface GatewayConfig {
   groq: { apiKey: string | undefined; model: string };
 }
 
-function readEnv(name: string): string | undefined {
-  return typeof process !== 'undefined' ? process.env[name] : undefined;
-}
-
 function readEnvInt(name: string, fallback: number): number {
   const raw = readEnv(name);
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) {
-    throw new Error(`${name} must be an integer, got '${raw}'`);
+    throw new Error(`SILICA_${name} must be an integer, got '${raw}'`);
   }
   return n;
 }
 
 /** Loads the gateway's own settings plus the NEAR adapter's config (it
  * validates its own required variables — see its .env.example) from
- * GASX_API_-prefixed (gateway) and adapter-specific environment
- * variables. */
+ * SILICA_API_-prefixed (server) and adapter-specific environment
+ * variables (GASX_ names still work as a fallback, see env.ts). */
 export function loadGatewayConfig(): GatewayConfig {
   return {
-    port: readEnvInt('GASX_API_PORT', 3000),
-    databaseUrl: readEnv('GASX_API_DATABASE_URL') || undefined,
+    port: readEnvInt('API_PORT', 3000),
+    databaseUrl: readEnv('API_DATABASE_URL') || undefined,
     near: loadNearConfig(),
     riskPolicy: {
-      // ARCHITECTURE.md §8's defaults — "small fixed cap" left concrete
-      // here rather than symbolic; override via env for a different
-      // demo budget.
-      maxOrderContracts: readEnvInt('GASX_API_MAX_ORDER_CONTRACTS', 100),
-      maxPositionContracts: readEnvInt('GASX_API_MAX_POSITION_CONTRACTS', 500),
+      // Small fixed caps, concrete rather than symbolic; override via env
+      // for a different demo budget.
+      maxOrderContracts: readEnvInt('API_MAX_ORDER_CONTRACTS', 100),
+      maxPositionContracts: readEnvInt('API_MAX_POSITION_CONTRACTS', 500),
       // Disabled by default (0 skips the check entirely -- see
       // riskPolicy.ts's checkOrderRisk). This removes a real protection
       // against placing an order far from the oracle price; the
       // deliberate tradeoff is frictionless testnet trading over
       // guarding against unfavourable pricing. Set a positive value
       // (e.g. 100 = 1%) to re-enable it.
-      maxSlippageBps: readEnvInt('GASX_API_MAX_SLIPPAGE_BPS', 0),
+      maxSlippageBps: readEnvInt('API_MAX_SLIPPAGE_BPS', 0),
     },
     groq: {
-      apiKey: readEnv('GASX_API_GROQ_API_KEY') || undefined,
+      apiKey: readEnv('API_GROQ_API_KEY') || undefined,
       // llama-3.3-70b-versatile, the model most existing Groq examples
       // still show, was deprecated (2026-07) in favour of the
       // openai/gpt-oss family -- verified against Groq's own current
@@ -66,7 +62,7 @@ export function loadGatewayConfig(): GatewayConfig {
       // chat-widget assistant: faster and cheaper, and this task
       // (explaining the platform, reading back numbers it is handed)
       // does not need the larger model's extra capability.
-      model: readEnv('GASX_API_GROQ_MODEL') || 'openai/gpt-oss-20b',
+      model: readEnv('API_GROQ_MODEL') || 'openai/gpt-oss-20b',
     },
   };
 }

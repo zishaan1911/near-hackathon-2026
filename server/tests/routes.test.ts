@@ -20,14 +20,14 @@ const riskPolicy: RiskPolicyConfig = {
 
 let app: FastifyInstance;
 let chainAdapter: FakeChainAdapter;
-let getCci: () => Promise<CciResponse>;
+let getSci: () => Promise<CciResponse>;
 
 beforeEach(() => {
   chainAdapter = new FakeChainAdapter();
-  getCci = async () => makeCciResponse(1042.6);
+  getSci = async () => makeCciResponse(1042.6);
   const deps: GatewayDeps = {
     chainAdapter,
-    getCci: () => getCci(),
+    getSci: () => getSci(),
     engine: new OnChainEngineLayer(
       { contractMultiplier: 10, marginRatioBps: 1000, maxOrderQuantity: 100, maxNetPosition: 500 },
       chainAdapter,
@@ -70,12 +70,10 @@ describe('GET /api/v1/market', () => {
     expect(body.orderbook.indicative).toBe(true);
     expect(body.orderbook.bestBid).toEqual({ price: 1040, quantity: 5 });
     expect(body.quote).toMatchObject({ fairPrice: 1043, bid: 1040, ask: 1046, size: 10, indicative: true });
-    expect(body.egsi).toBeUndefined();
-    expect(body.forecast).toBeUndefined();
   });
 
   it('degrades (index null, pillars empty) when the compute index throws', async () => {
-    getCci = async () => {
+    getSci = async () => {
       throw new Error('upstream exploded');
     };
 
@@ -90,7 +88,7 @@ describe('GET /api/v1/market', () => {
   });
 
   it('has a null quote when the index level is null', async () => {
-    getCci = async () => makeCciResponse(null);
+    getSci = async () => makeCciResponse(null);
     const res = await app.inject({ method: 'GET', url: '/api/v1/market' });
     expect(res.statusCode).toBe(200);
     expect(res.json().index.level).toBeNull();
@@ -325,7 +323,7 @@ describe('GET /api/v1/candles and removed history', () => {
   it('without a database serves candles from the back-cast + settlements, never 503', async () => {
     const noDbApp = buildServer({
       chainAdapter,
-      getCci: () => getCci(),
+      getSci: () => getSci(),
       riskPolicy,
       logger: false,
       historySources: {
@@ -362,7 +360,7 @@ describe('GET /api/v1/candles and removed history', () => {
     const candle = { time: 1_700_000_000, open: 1000, high: 1010, low: 995, close: 1005, samples: 3 };
     const dbApp = buildServer({
       chainAdapter,
-      getCci: () => getCci(),
+      getSci: () => getSci(),
       riskPolicy,
       logger: false,
       db: {
@@ -383,16 +381,13 @@ describe('GET /api/v1/candles and removed history', () => {
 });
 
 describe('removed routes', () => {
-  it('no longer serves open-account or hedge endpoints', async () => {
+  it('does not serve an open-account endpoint', async () => {
     const open = await app.inject({
       method: 'POST',
       url: '/api/v1/account/prepare-open',
       payload: { trader: 'alice.testnet' },
     });
     expect(open.statusCode).toBe(404);
-
-    const hedge = await app.inject({ method: 'POST', url: '/api/v1/hedge/sync-signal' });
-    expect(hedge.statusCode).toBe(404);
   });
 });
 

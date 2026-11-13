@@ -205,7 +205,7 @@ describe('settlement reader', () => {
     const chain = chainWith(5, {
       1: { underlying: 'Ethereum Gas Stress Index', settled: true, price: 400, expiryMs: 1000 },
       2: { underlying: 'SCI-1H', settled: true, price: 1010, expiryMs: Date.UTC(2026, 10, 11, 12) },
-      3: { underlying: 'CCI-1H', settled: true, price: 1005, expiryMs: Date.UTC(2026, 10, 11, 11) },
+      3: { underlying: 'SCI-1H', settled: true, price: 1005, expiryMs: Date.UTC(2026, 10, 11, 11) },
       4: { underlying: 'SCI-1H', settled: false, price: null, expiryMs: Date.UTC(2026, 10, 11, 13) },
       // 5 does not exist -> null
     });
@@ -286,7 +286,7 @@ describe('GET /api/v1/indices/compute/history (back-cast + settlements)', () => 
     chain.marketsById.set(1, { marketNumber: 1, underlying: 'SCI-1H', expiryMs: Date.UTC(2026, 10, 11, 12), settled: true, settlementPrice: 1012 });
     registerIndicesRoutes(
       app,
-      { chainAdapter: chain, db: null, getCci: async () => { throw new Error('unused'); } } as unknown as GatewayDeps,
+      { chainAdapter: chain, db: null, getSci: async () => { throw new Error('unused'); } } as unknown as GatewayDeps,
       { fetchImpl: healthyFetch(), now: () => Date.UTC(2026, 10, 12), env: {} },
     );
     const res = await app.inject({ method: 'GET', url: '/api/v1/indices/compute/history?days=7' });

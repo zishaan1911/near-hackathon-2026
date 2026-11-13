@@ -15,7 +15,8 @@ import {
   type NearAdapterConfig,
   type TickContext,
   type TickReport,
-} from '@gasx/near-adapter';
+} from '@silica/near-adapter';
+import { readEnv } from './env.js';
 
 const MIN_TICK_GAP_MS = 10_000;
 const MIN_POKE_GAP_MS = 15_000;
@@ -47,26 +48,20 @@ function bearerMatches(request: FastifyRequest, secret: string): boolean {
 }
 
 function defaultSigner(env: NodeJS.ProcessEnv): TickContext['signer'] {
-  // createSigner reads process.env; copy the two keys across when a custom
-  // env was supplied.
-  for (const name of ['GASX_NEAR_PUBLISHER_ACCOUNT_ID', 'GASX_NEAR_PUBLISHER_PRIVATE_KEY']) {
-    const value = env[name];
-    if (value !== undefined) process.env[name] = value;
-  }
-  return createSigner('GASX_NEAR_PUBLISHER_ACCOUNT_ID', 'GASX_NEAR_PUBLISHER_PRIVATE_KEY');
+  return createSigner(env);
 }
 
 
 /**
- * Demo liquidity (testnet only): when GASX_DEMO_LIQUIDITY is 'true' the
+ * Demo liquidity (testnet only): when SILICA_DEMO_LIQUIDITY is 'true' the
  * publisher account also quotes a bid and an ask. The maker is the oracle
  * account, a conflict of interest that is acceptable only for a demo.
  */
 export function liquidityContext(env: NodeJS.ProcessEnv): Partial<TickContext> {
-  if (env.GASX_DEMO_LIQUIDITY !== 'true') return {};
-  const accountId = env.GASX_NEAR_PUBLISHER_ACCOUNT_ID;
+  if (readEnv('DEMO_LIQUIDITY', env) !== 'true') return {};
+  const accountId = readEnv('NEAR_PUBLISHER_ACCOUNT_ID', env);
   if (!accountId) return {};
-  const qty = Number(env.GASX_DEMO_LIQUIDITY_QUANTITY);
+  const qty = Number(readEnv('DEMO_LIQUIDITY_QUANTITY', env));
   const quantity = Number.isInteger(qty) && qty > 0 ? qty : 100;
   return {
     signerAccountId: accountId,
@@ -82,7 +77,7 @@ export function registerTickRoute(app: FastifyInstance, deps: TickRouteDeps): vo
 
   const sinceLast = (): number => (lastFinishedAt === null ? Infinity : now() - lastFinishedAt);
   const isConfigured = (env: NodeJS.ProcessEnv): boolean =>
-    !deps.config.devMarket && !!deps.config.contractId && !!env.GASX_NEAR_PUBLISHER_PRIVATE_KEY;
+    !deps.config.devMarket && !!deps.config.contractId && !!readEnv('NEAR_PUBLISHER_PRIVATE_KEY', env);
 
   /** Runs one tick under the shared in-flight guard. Throws on failure. */
   const execute = async (env: NodeJS.ProcessEnv): Promise<TickReport> => {

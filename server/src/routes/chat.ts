@@ -2,16 +2,15 @@
  * POST /api/v1/chat — a platform-explainer assistant backed by Groq.
  *
  * Why this lives server-side rather than the frontend calling Groq
- * directly: the API key must never reach the browser. GLOSSARY.md's
- * Golden Rules are explicit that secrets never go in client code, and a
- * key embedded in a frontend bundle is trivially extractable by anyone
- * who opens devtools — it would not be "the gateway's key with extra
+ * directly: the API key must never reach the browser. Secrets never
+ * go in client code, and a key embedded in a frontend bundle is trivially extractable by anyone
+ * who opens devtools — it would not be "the server's key with extra
  * steps", it would be a public key. This route is the only thing that
- * ever sees GASX_API_GROQ_API_KEY.
+ * ever sees SILICA_API_GROQ_API_KEY.
  *
  * The assistant is given the live Silica Compute Index (SCI) level and
  * its pillars as context on every request, from the shared compute
- * service (deps.getCci, best-effort). Without this, the model would either
+ * service (deps.getSci, best-effort). Without this, the model would either
  * refuse to answer "what's the SCI right now" or hallucinate a
  * plausible-sounding number.
  *
@@ -64,7 +63,7 @@ function validateMessages(body: ChatBody): ChatMessage[] | string {
  * failing compute service degrades this to "no live reading available"
  * rather than failing the whole chat request. */
 async function buildSystemPrompt(deps: GatewayDeps): Promise<string> {
-  const cci = await deps.getCci().catch(() => null);
+  const sci = await deps.getSci().catch(() => null);
 
   const lines = [
     'You are Kora, the assistant for Silica. Silica is a market for the price of ' +
@@ -94,13 +93,13 @@ async function buildSystemPrompt(deps: GatewayDeps): Promise<string> {
     '',
   ];
 
-  if (cci && cci.index.level !== null) {
-    const pillars = cci.components
+  if (sci && sci.index.level !== null) {
+    const pillars = sci.components
       .map((c) => `${c.label}: ${c.status === 'ok' && c.level !== null ? Math.round(c.level) : 'down'}`)
       .join('; ');
     lines.push(
-      `Current live reading: SCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), ` +
-        `as of ${cci.index.asOf}${cci.index.degraded ? ', degraded (some pillars are down)' : ''}.`,
+      `Current live reading: SCI = ${Math.round(sci.index.level)} (base ${sci.index.base}), ` +
+        `as of ${sci.index.asOf}${sci.index.degraded ? ', degraded (some pillars are down)' : ''}.`,
       `Pillar levels (1000 = base): ${pillars}.`,
     );
   } else {
@@ -122,7 +121,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: GatewayDeps): voi
   app.post<{ Body: ChatBody }>('/api/v1/chat', async (request, reply) => {
     if (!deps.groq?.apiKey) {
       return reply.status(501).send({
-        error: 'chat assistant not configured -- set GASX_API_GROQ_API_KEY (see .env.example)',
+        error: 'chat assistant not configured -- set SILICA_API_GROQ_API_KEY (see .env.example)',
       });
     }
 

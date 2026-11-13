@@ -1,5 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
-import type { OrderView } from '@gasx/near-adapter';
+import { describe, expect, it } from 'vitest';
+import type { OrderView } from '@silica/near-adapter';
 import { OnChainEngineLayer, quoteFromIndex, type EngineConfig } from '../src/engineLayer.js';
 
 const config: EngineConfig = {

@@ -1,11 +1,11 @@
 /**
  * On-chain settlements: every settled hourly market (underlying ending in
- * "CI-1H": CCI-1H, SCI-1H) stores its settlement price on chain. Read
+ * "CI-1H", e.g. SCI-1H) stores its settlement price on chain. Read
  * get_market({market_id}) for ids 1..current and keep the settled ones.
  * Settled markets never change, so they are cached forever in memory; ids not
  * yet settled are re-read at most once a minute.
  */
-import type { MarketState, MarketSummary } from '@gasx/near-adapter';
+import type { MarketState, MarketSummary } from '@silica/near-adapter';
 
 export const SETTLEMENT_RECHECK_MS = 60_000;
 const CONCURRENCY = 8;

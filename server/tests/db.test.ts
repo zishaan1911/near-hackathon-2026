@@ -1,21 +1,22 @@
-﻿/**
+/**
  * Database tests.
  *
  * The pure helpers (row mapping, limit clamping, candle bucketing math)
  * are tested unconditionally. The integration block runs against a REAL
  * Postgres server, not a mock — a mocked database would happily accept
  * SQL that a real server rejects, which defeats the point of testing the
- * schema at all. It is skipped automatically when GASX_TEST_DATABASE_URL
+ * schema at all. It is skipped automatically when SILICA_TEST_DATABASE_URL
  * is unset, so the default test run needs no database.
  *
  * To run it (the migration is applied by the test itself, idempotently;
  * tables are truncated before each case, so use a scratch database):
- *   GASX_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/gasx_test npm test
+ *   SILICA_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/silica_test npm test
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
+import { readEnv } from '../src/env.js';
 import {
   bucketStart,
   clampInterval,
@@ -27,7 +28,7 @@ import {
   type Database,
 } from '../src/db.js';
 
-const url = process.env.GASX_TEST_DATABASE_URL;
+const url = readEnv('TEST_DATABASE_URL');
 const silentLog = { error: () => {} };
 
 describe('pure helpers', () => {
