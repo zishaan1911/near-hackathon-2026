@@ -1,5 +1,5 @@
--- Congest Compute Index (CCI) snapshots. One row per cron snapshot; the
--- gateway is the only writer/reader (service role), so RLS is enabled with no
+-- Silica Compute Index (SCI) snapshots. One row per cron snapshot; the
+-- server is the only writer/reader (service role), so RLS is enabled with no
 -- policies. Idempotent: safe to re-run.
 
 create table if not exists compute_index_snapshots (

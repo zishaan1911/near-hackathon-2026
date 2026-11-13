@@ -15,14 +15,23 @@ create extension if not exists pg_net with schema extensions;
 
 do $$
 begin
-  perform cron.unschedule('congest-tick');
+  perform cron.unschedule('silica-tick');
 exception when others then
   null; -- no existing job
 end
 $$;
 
+-- The job's earlier name, removed so a re-run cannot leave a duplicate.
+do $$
+begin
+  perform cron.unschedule('congest-tick');
+exception when others then
+  null;
+end
+$$;
+
 select cron.schedule(
-  'congest-tick',
+  'silica-tick',
   '* * * * *',
   $$ select net.http_post(
        url := current_setting('app.settings.tick_url'),

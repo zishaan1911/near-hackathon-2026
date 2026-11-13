@@ -1,4 +1,4 @@
--- Schedules the CCI snapshot every 15 minutes via Supabase pg_cron + pg_net
+-- Schedules the SCI snapshot every 15 minutes via Supabase pg_cron + pg_net
 -- calling the deployed endpoint (see 0002_cron.sql for the tick job).
 --
 -- Before applying, the operator must run (placeholders only; use your real
@@ -15,14 +15,23 @@ create extension if not exists pg_net with schema extensions;
 
 do $$
 begin
-  perform cron.unschedule('congest-compute-snapshot');
+  perform cron.unschedule('silica-compute-snapshot');
 exception when others then
   null; -- no existing job
 end
 $$;
 
+-- The job's earlier name, removed so a re-run cannot leave a duplicate.
+do $$
+begin
+  perform cron.unschedule('congest-compute-snapshot');
+exception when others then
+  null;
+end
+$$;
+
 select cron.schedule(
-  'congest-compute-snapshot',
+  'silica-compute-snapshot',
   '*/15 * * * *',
   $$ select net.http_post(
        url := current_setting('app.settings.compute_snapshot_url'),
