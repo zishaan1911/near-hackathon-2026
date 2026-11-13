@@ -8760,7 +8760,7 @@ var require_thread_stream = __commonJS({
     var { EventEmitter } = require("events");
     var { Worker } = require("worker_threads");
     var { join: join2 } = require("path");
-    var { pathToFileURL: pathToFileURL3 } = require("url");
+    var { pathToFileURL } = require("url");
     var { wait } = require_wait();
     var {
       WRITE_INDEX,
@@ -8816,7 +8816,7 @@ var require_thread_stream = __commonJS({
         name: opts.workerOpts?.name || "thread-stream",
         trackUnmanagedFds: false,
         workerData: {
-          filename: filename.indexOf("file://") === 0 ? filename : pathToFileURL3(filename).href,
+          filename: filename.indexOf("file://") === 0 ? filename : pathToFileURL(filename).href,
           dataBuf: stream[kImpl].dataBuf,
           stateBuf: stream[kImpl].stateBuf,
           workerData: {
@@ -9792,11 +9792,11 @@ var require_tools = __commonJS({
         }
       }
     }
-    function buildFormatters(level, bindings, log4) {
+    function buildFormatters(level, bindings, log) {
       return {
         level,
         bindings,
-        log: log4
+        log
       };
     }
     function normalizeDestFileDescriptor(destination) {
@@ -10177,11 +10177,11 @@ var require_proto = __commonJS({
         }
       } else instance[serializersSym] = serializers2;
       if (options.hasOwnProperty("formatters")) {
-        const { level, bindings: chindings, log: log4 } = options.formatters;
+        const { level, bindings: chindings, log } = options.formatters;
         instance[formattersSym] = buildFormatters(
           level || formatters.level,
           chindings || resetChildingsFormatter,
-          log4 || formatters.log
+          log || formatters.log
         );
       } else {
         instance[formattersSym] = buildFormatters(
@@ -11798,8 +11798,8 @@ var require_error_serializer = __commonJS({
         json += JSON_STR_END_OBJECT;
         return json;
       }
-      const main3 = anonymous0;
-      return main3;
+      const main = anonymous0;
+      return main;
     })(validator2, serializer);
   }
 });
@@ -12141,7 +12141,7 @@ var require_reply = __commonJS({
     var ContentType = require_content_type();
     var toString = Object.prototype.toString;
     var HTTP2_WRITE_CHUNK_SIZE = 64 * 1024;
-    function Reply(res, request, log4) {
+    function Reply(res, request, log) {
       this.raw = res;
       this[kReplySerializer] = null;
       this[kReplyErrorHandlerCalled] = false;
@@ -12152,7 +12152,7 @@ var require_reply = __commonJS({
       this[kReplyTrailers] = null;
       this[kReplyHasStatusCode] = false;
       this[kReplyStartTime] = void 0;
-      this.log = log4;
+      this.log = log;
     }
     Reply.props = [];
     Reply.instanceProperties = /* @__PURE__ */ new Set(["raw", "request", "log"]);
@@ -12875,7 +12875,7 @@ var require_reply = __commonJS({
     }
     function buildReply(R) {
       const props = R.props.slice();
-      function _Reply(res, request, log4) {
+      function _Reply(res, request, log) {
         this.raw = res;
         this[kReplyIsError] = false;
         this[kReplyErrorHandlerCalled] = false;
@@ -12886,7 +12886,7 @@ var require_reply = __commonJS({
         this[kReplyTrailers] = null;
         this[kReplyStartTime] = void 0;
         this[kReplyEndTime] = void 0;
-        this.log = log4;
+        this.log = log;
         let prop;
         for (let i = 0; i < props.length; i++) {
           prop = props[i];
@@ -13979,13 +13979,13 @@ var require_request = __commonJS({
       querystring: kSchemaQuerystring,
       query: kSchemaQuerystring
     };
-    function Request(id2, params, req, query, log4, context) {
+    function Request(id2, params, req, query, log, context) {
       this.id = id2;
       this[kRouteContext] = context;
       this.params = params;
       this.raw = req;
       this.query = query;
-      this.log = log4;
+      this.log = log;
       this.body = void 0;
     }
     Request.props = [];
@@ -14018,13 +14018,13 @@ var require_request = __commonJS({
     }
     function buildRegularRequest(R) {
       const props = R.props.slice();
-      function _Request(id2, params, req, query, log4, context) {
+      function _Request(id2, params, req, query, log, context) {
         this.id = id2;
         this[kRouteContext] = context;
         this.params = params;
         this.raw = req;
         this.query = query;
-        this.log = log4;
+        this.log = log;
         this.body = void 0;
         let prop;
         for (let i = 0; i < props.length; i++) {
@@ -19499,11 +19499,11 @@ var require_core = __commonJS({
     Ajv.ValidationError = validation_error_1.default;
     Ajv.MissingRefError = ref_error_1.default;
     exports2.default = Ajv;
-    function checkOptions(checkOpts, options, msg, log4 = "error") {
+    function checkOptions(checkOpts, options, msg, log = "error") {
       for (const key in checkOpts) {
         const opt = key;
         if (opt in options)
-          this.logger[log4](`${msg}: option ${key}. ${checkOpts[opt]}`);
+          this.logger[log](`${msg}: option ${key}. ${checkOpts[opt]}`);
       }
     }
     function getSchEnv(keyRef) {
@@ -37636,20 +37636,22 @@ __export(vercelHandler_exports, {
 });
 module.exports = __toCommonJS(vercelHandler_exports);
 
-// ../blockchain/near/dist/config.js
-function readEnv(name) {
-  return typeof process !== "undefined" ? process.env[name] : void 0;
+// ../blockchain/near/dist/env.js
+function readEnv(name, env = process.env) {
+  return env[`SILICA_${name}`] ?? env[`GASX_${name}`];
 }
+
+// ../blockchain/near/dist/config.js
 function loadConfigFromEnv() {
-  const network = readEnv("GASX_NEAR_NETWORK") || "testnet";
-  const rpcUrl = readEnv("GASX_NEAR_RPC_URL") || "https://test.rpc.fastnear.com";
-  const contractId = readEnv("GASX_NEAR_CONTRACT_ID") || "";
-  const collateralToken = readEnv("GASX_NEAR_COLLATERAL_TOKEN") || "";
+  const network = readEnv("NEAR_NETWORK") || "testnet";
+  const rpcUrl = readEnv("NEAR_RPC_URL") || "https://test.rpc.fastnear.com";
+  const contractId = readEnv("NEAR_CONTRACT_ID") || "";
+  const collateralToken = readEnv("NEAR_COLLATERAL_TOKEN") || "";
   const idsMissing = !contractId || !collateralToken;
-  const forced = readEnv("GASX_NEAR_DEV_MARKET");
+  const forced = readEnv("NEAR_DEV_MARKET");
   const devMarket = forced === "true" ? true : forced === "false" ? false : idsMissing;
   if (!devMarket && idsMissing) {
-    throw new Error("GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN are both required unless GASX_NEAR_DEV_MARKET is set (see blockchain/near/.env.example)");
+    throw new Error("SILICA_NEAR_CONTRACT_ID and SILICA_NEAR_COLLATERAL_TOKEN are both required unless SILICA_NEAR_DEV_MARKET is set (see blockchain/near/.env.example)");
   }
   return { network, rpcUrl, contractId, collateralToken, devMarket };
 }
@@ -37726,7 +37728,7 @@ async function viewCall(config2, contractId, methodName, args = {}) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
-      id: "gasx",
+      id: "silica",
       method: "query",
       params: {
         request_type: "call_function",
@@ -37771,7 +37773,7 @@ function fetchDevMarketState(config2) {
   const expiryMs = Math.floor(now / hourMs) * hourMs + hourMs;
   return {
     marketId: "dev-market",
-    underlying: "Ethereum Gas Stress Index",
+    underlying: "Silica Compute Index",
     expiryMs,
     contractMultiplier: 1,
     tickSize: 1,
@@ -37945,7 +37947,7 @@ async function fetchMarketState(config2) {
 // ../blockchain/near/dist/nearAdapter.js
 var DevMarketUnavailableError = class extends Error {
   constructor() {
-    super("The Silica contract is not deployed \u2014 running in dev-market mode. Orders need GASX_NEAR_CONTRACT_ID and GASX_NEAR_COLLATERAL_TOKEN set (see blockchain/near/.env.example).");
+    super("The Silica contract is not deployed \u2014 running in dev-market mode. Orders need SILICA_NEAR_CONTRACT_ID and SILICA_NEAR_COLLATERAL_TOKEN set (see blockchain/near/.env.example).");
     this.name = "DevMarketUnavailableError";
   }
 };
@@ -37962,7 +37964,7 @@ var NearChainAdapter = class {
   constructor(config2) {
     this.config = config2;
     if (config2.devMarket) {
-      console.warn("[silica/near-adapter] dev-market mode: serving a synthetic market; no transactions can be prepared. Set GASX_NEAR_DEV_MARKET=false once deployed.");
+      console.warn("[silica/near-adapter] dev-market mode: serving a synthetic market; no transactions can be prepared. Set SILICA_NEAR_DEV_MARKET=false once deployed.");
     }
   }
   getMarketState() {
@@ -48311,40 +48313,40 @@ var DEFAULT_RPC_URLS = {
   testnet: "https://test.rpc.fastnear.com",
   mainnet: "https://free.rpc.fastnear.com"
 };
-function resolveRpcUrl() {
-  const explicit = process.env.GASX_NEAR_RPC_URL;
+function resolveRpcUrl(env = process.env) {
+  const explicit = readEnv("NEAR_RPC_URL", env);
   if (explicit)
     return explicit;
-  const network = process.env.GASX_NEAR_NETWORK || "testnet";
+  const network = readEnv("NEAR_NETWORK", env) || "testnet";
   const url = DEFAULT_RPC_URLS[network];
   if (!url) {
-    throw new Error(`GASX_NEAR_RPC_URL is required for network "${network}"`);
+    throw new Error(`SILICA_NEAR_RPC_URL is required for network "${network}"`);
   }
   return url;
 }
-function requireEnv(name) {
-  const value = process.env[name];
+function requireEnv(name, env) {
+  const value = readEnv(name, env);
   if (!value) {
-    throw new Error(`${name} is required (see .env.example)`);
+    throw new Error(`SILICA_${name} is required (see .env.example)`);
   }
   return value;
 }
-function createSigner(accountIdEnv, privateKeyEnv) {
-  const accountId = requireEnv(accountIdEnv);
-  const privateKey = requireEnv(privateKeyEnv);
+function createSigner(env = process.env) {
+  const accountId = requireEnv("NEAR_PUBLISHER_ACCOUNT_ID", env);
+  const privateKey = requireEnv("NEAR_PUBLISHER_PRIVATE_KEY", env);
   if (!privateKey.startsWith("ed25519:")) {
-    throw new Error(`${privateKeyEnv} must be an ed25519 key in the form "ed25519:..."`);
+    throw new Error('SILICA_NEAR_PUBLISHER_PRIVATE_KEY must be an ed25519 key in the form "ed25519:..."');
   }
-  return new Account(accountId, resolveRpcUrl(), privateKey);
+  return new Account(accountId, resolveRpcUrl(env), privateKey);
 }
 
-// ../blockchain/near/dist/matcher.js
-var import_node_url = require("node:url");
-var import_meta = {};
-var TGAS_30 = "30000000000000";
-var PAGE_SIZE = 100;
-function log(message2, fields = {}) {
-  console.log(`[silica/matcher] ${message2} ${JSON.stringify(fields)}`);
+// ../blockchain/near/dist/pricing.js
+function toOraclePrice(score, maxPrice) {
+  if (typeof score !== "number" || !Number.isFinite(score) || score < 0)
+    return null;
+  if (!Number.isFinite(maxPrice) || maxPrice < 0)
+    return null;
+  return Math.min(Math.max(Math.round(score), 0), Math.floor(maxPrice));
 }
 function findMatches(orders) {
   const bids = orders.filter((o) => o.is_bid).sort((a, b2) => b2.price - a.price || a.order_id - b2.order_id);
@@ -48360,164 +48362,10 @@ function findMatches(orders) {
   }
   return matches;
 }
-function envNumber(name, fallback) {
-  const raw = process.env[name];
-  if (!raw)
-    return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-async function fetchOpenOrders(config2, contractId) {
-  const all = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const page = await viewCall(config2, contractId, "get_open_orders", {
-      from_index: from,
-      limit: PAGE_SIZE
-    });
-    all.push(...page);
-    if (page.length < PAGE_SIZE)
-      break;
-  }
-  return all;
-}
-async function tick(contractId, config2, matcher) {
-  const market = await viewCall(config2, contractId, "get_market", {});
-  if (market.paused || market.settled || Date.now() >= market.expiry_ms) {
-    log("market not matchable", {
-      paused: market.paused,
-      settled: market.settled,
-      expiry_ms: market.expiry_ms
-    });
-    return;
-  }
-  const orders = await fetchOpenOrders(config2, contractId);
-  const pairs = findMatches(orders);
-  for (const { buy, sell } of pairs) {
-    try {
-      await matcher.callFunction({
-        contractId,
-        methodName: "match_orders",
-        args: { buy_order_id: buy, sell_order_id: sell },
-        gas: TGAS_30,
-        deposit: "0"
-      });
-      log("matched", { buy, sell });
-    } catch (err) {
-      log("match failed", { buy, sell, error: err.message });
-    }
-  }
-}
-async function main() {
-  const contractId = process.env.GASX_NEAR_CONTRACT_ID;
-  if (!contractId)
-    throw new Error("GASX_NEAR_CONTRACT_ID is required (see .env.example)");
-  const intervalMs = envNumber("GASX_MATCH_INTERVAL_SECONDS", 5) * 1e3;
-  const config2 = loadConfigFromEnv();
-  const matcher = createSigner("GASX_NEAR_MATCHER_ACCOUNT_ID", "GASX_NEAR_MATCHER_PRIVATE_KEY");
-  log("started", { contractId, intervalMs, matcher: matcher.accountId });
-  for (; ; ) {
-    try {
-      await tick(contractId, config2, matcher);
-    } catch (err) {
-      log("tick failed", { error: err.message });
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-if (process.argv[1] && import_meta.url === (0, import_node_url.pathToFileURL)(process.argv[1]).href) {
-  main().catch((err) => {
-    log("fatal", { error: err.message });
-    process.exit(1);
-  });
-}
-
-// ../blockchain/near/dist/publisher.js
-var import_node_url2 = require("node:url");
-var import_meta2 = {};
-var TGAS_302 = "30000000000000";
-function log3(message2, fields = {}) {
-  console.log(`[silica/publisher] ${message2} ${JSON.stringify(fields)}`);
-}
-function toOraclePrice(score, maxPrice) {
-  if (typeof score !== "number" || !Number.isFinite(score) || score < 0)
-    return null;
-  if (!Number.isFinite(maxPrice) || maxPrice < 0)
-    return null;
-  return Math.min(Math.max(Math.round(score), 0), Math.floor(maxPrice));
-}
-function envNumber2(name, fallback) {
-  const raw = process.env[name];
-  if (!raw)
-    return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-async function fetchScore(apiUrl) {
-  const res = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/indices/compute`);
-  if (!res.ok) {
-    log3("index endpoint returned an error", { status: res.status });
-    return null;
-  }
-  const body = await res.json();
-  const level = body.index?.level;
-  return typeof level === "number" ? level : null;
-}
-async function tick2(contractId, apiUrl, config2, publisher) {
-  const oracle = await viewCall(config2, contractId, "get_oracle", {});
-  const score = await fetchScore(apiUrl);
-  const price = score === null ? null : toOraclePrice(score, oracle.max_price);
-  if (price === null) {
-    log3("skipping publish: no usable score", { score });
-  } else {
-    await publisher.callFunction({
-      contractId,
-      methodName: "update_price",
-      args: { price },
-      gas: TGAS_302,
-      deposit: "0"
-    });
-    log3("published price", { score, price });
-  }
-  const market = await viewCall(config2, contractId, "get_market", {});
-  if (!market.settled && Date.now() >= market.expiry_ms) {
-    await publisher.callFunction({
-      contractId,
-      methodName: "settle_market",
-      args: {},
-      gas: TGAS_302,
-      deposit: "0"
-    });
-    log3("settled market", { expiry_ms: market.expiry_ms });
-  }
-}
-async function main2() {
-  const contractId = process.env.GASX_NEAR_CONTRACT_ID;
-  if (!contractId)
-    throw new Error("GASX_NEAR_CONTRACT_ID is required (see .env.example)");
-  const apiUrl = process.env.GASX_PUBLISH_API_URL || "http://localhost:3000";
-  const intervalMs = envNumber2("GASX_PUBLISH_INTERVAL_SECONDS", 60) * 1e3;
-  const config2 = loadConfigFromEnv();
-  const publisher = createSigner("GASX_NEAR_PUBLISHER_ACCOUNT_ID", "GASX_NEAR_PUBLISHER_PRIVATE_KEY");
-  log3("started", { contractId, apiUrl, intervalMs, publisher: publisher.accountId });
-  for (; ; ) {
-    try {
-      await tick2(contractId, apiUrl, config2, publisher);
-    } catch (err) {
-      log3("tick failed", { error: err.message });
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-if (process.argv[1] && import_meta2.url === (0, import_node_url2.pathToFileURL)(process.argv[1]).href) {
-  main2().catch((err) => {
-    log3("fatal", { error: err.message });
-    process.exit(1);
-  });
-}
 
 // ../blockchain/near/dist/tick.js
-var TGAS_303 = "30000000000000";
-var PAGE_SIZE2 = 100;
+var TGAS_30 = "30000000000000";
+var PAGE_SIZE = 100;
 var MIN_UPDATE_AGE_MS = 6e4;
 var MIN_MARKET_LIFE_MS = 10 * 6e4;
 var HOUR_MS = 60 * 6e4;
@@ -48538,7 +48386,7 @@ async function runTick(ctx) {
     contractId: ctx.contractId,
     methodName,
     args,
-    gas: TGAS_303,
+    gas: TGAS_30,
     deposit: "0"
   });
   let oracle = null;
@@ -48601,14 +48449,14 @@ async function runTick(ctx) {
   const tradable = !!current && !current.paused && !current.settled && now() < current.expiry_ms;
   const pageAll = async (method, args) => {
     const all = [];
-    for (let from = 0; ; from += PAGE_SIZE2) {
+    for (let from = 0; ; from += PAGE_SIZE) {
       const page = await view(ctx.config, ctx.contractId, method, {
         ...args,
         from_index: from,
-        limit: PAGE_SIZE2
+        limit: PAGE_SIZE
       });
       all.push(...page);
-      if (page.length < PAGE_SIZE2)
+      if (page.length < PAGE_SIZE)
         break;
     }
     return all;
@@ -48741,6 +48589,11 @@ async function runTick(ctx) {
     report.errors.push(`match: ${message(err)}`);
   }
   return report;
+}
+
+// src/env.ts
+function readEnv2(name, env = process.env) {
+  return env[`SILICA_${name}`] ?? env[`GASX_${name}`];
 }
 
 // src/compute/base.ts
@@ -49531,39 +49384,35 @@ function createComputeService(opts) {
 }
 
 // src/config.ts
-function readEnv2(name) {
-  return typeof process !== "undefined" ? process.env[name] : void 0;
-}
 function readEnvInt(name, fallback) {
   const raw = readEnv2(name);
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) {
-    throw new Error(`${name} must be an integer, got '${raw}'`);
+    throw new Error(`SILICA_${name} must be an integer, got '${raw}'`);
   }
   return n;
 }
 function loadGatewayConfig() {
   return {
-    port: readEnvInt("GASX_API_PORT", 3e3),
-    databaseUrl: readEnv2("GASX_API_DATABASE_URL") || void 0,
+    port: readEnvInt("API_PORT", 3e3),
+    databaseUrl: readEnv2("API_DATABASE_URL") || void 0,
     near: loadConfigFromEnv(),
     riskPolicy: {
-      // ARCHITECTURE.md §8's defaults — "small fixed cap" left concrete
-      // here rather than symbolic; override via env for a different
-      // demo budget.
-      maxOrderContracts: readEnvInt("GASX_API_MAX_ORDER_CONTRACTS", 100),
-      maxPositionContracts: readEnvInt("GASX_API_MAX_POSITION_CONTRACTS", 500),
+      // Small fixed caps, concrete rather than symbolic; override via env
+      // for a different demo budget.
+      maxOrderContracts: readEnvInt("API_MAX_ORDER_CONTRACTS", 100),
+      maxPositionContracts: readEnvInt("API_MAX_POSITION_CONTRACTS", 500),
       // Disabled by default (0 skips the check entirely -- see
       // riskPolicy.ts's checkOrderRisk). This removes a real protection
       // against placing an order far from the oracle price; the
       // deliberate tradeoff is frictionless testnet trading over
       // guarding against unfavourable pricing. Set a positive value
       // (e.g. 100 = 1%) to re-enable it.
-      maxSlippageBps: readEnvInt("GASX_API_MAX_SLIPPAGE_BPS", 0)
+      maxSlippageBps: readEnvInt("API_MAX_SLIPPAGE_BPS", 0)
     },
     groq: {
-      apiKey: readEnv2("GASX_API_GROQ_API_KEY") || void 0,
+      apiKey: readEnv2("API_GROQ_API_KEY") || void 0,
       // llama-3.3-70b-versatile, the model most existing Groq examples
       // still show, was deprecated (2026-07) in favour of the
       // openai/gpt-oss family -- verified against Groq's own current
@@ -49572,7 +49421,7 @@ function loadGatewayConfig() {
       // chat-widget assistant: faster and cheaper, and this task
       // (explaining the platform, reading back numbers it is handed)
       // does not need the larger model's extra capability.
-      model: readEnv2("GASX_API_GROQ_MODEL") || "openai/gpt-oss-20b"
+      model: readEnv2("API_GROQ_MODEL") || "openai/gpt-oss-20b"
     }
   };
 }
@@ -51723,9 +51572,9 @@ function mapCandleRow(r) {
   };
 }
 var PostgresDatabase = class {
-  constructor(sql, log4) {
+  constructor(sql, log) {
     this.sql = sql;
-    this.log = log4;
+    this.log = log;
   }
   sql;
   log;
@@ -51809,7 +51658,7 @@ function isLocalHost(databaseUrl) {
     return false;
   }
 }
-function createDatabase(databaseUrl, log4) {
+function createDatabase(databaseUrl, log) {
   if (!databaseUrl) return null;
   const sql = src_default(databaseUrl, {
     // One connection and no prepared statements: both are required for
@@ -51820,7 +51669,7 @@ function createDatabase(databaseUrl, log4) {
     idle_timeout: 20,
     ssl: isLocalHost(databaseUrl) ? false : "require"
   });
-  return new PostgresDatabase(sql, log4);
+  return new PostgresDatabase(sql, log);
 }
 
 // src/engineLayer.ts
@@ -51971,7 +51820,7 @@ function validateMessages(body) {
   return validated;
 }
 async function buildSystemPrompt(deps) {
-  const cci = await deps.getCci().catch(() => null);
+  const sci = await deps.getSci().catch(() => null);
   const lines = [
     "You are Kora, the assistant for Silica. Silica is a market for the price of compute. Silica publishes the Silica Compute Index (SCI) and lists an hourly SCI future (market SCI-1H) on NEAR.",
     "",
@@ -51983,10 +51832,10 @@ async function buildSystemPrompt(deps) {
     "- The quote and depth shown in the order book are indicative; real depth comes from open orders on the NEAR contract.",
     ""
   ];
-  if (cci && cci.index.level !== null) {
-    const pillars = cci.components.map((c) => `${c.label}: ${c.status === "ok" && c.level !== null ? Math.round(c.level) : "down"}`).join("; ");
+  if (sci && sci.index.level !== null) {
+    const pillars = sci.components.map((c) => `${c.label}: ${c.status === "ok" && c.level !== null ? Math.round(c.level) : "down"}`).join("; ");
     lines.push(
-      `Current live reading: SCI = ${Math.round(cci.index.level)} (base ${cci.index.base}), as of ${cci.index.asOf}${cci.index.degraded ? ", degraded (some pillars are down)" : ""}.`,
+      `Current live reading: SCI = ${Math.round(sci.index.level)} (base ${sci.index.base}), as of ${sci.index.asOf}${sci.index.degraded ? ", degraded (some pillars are down)" : ""}.`,
       `Pillar levels (1000 = base): ${pillars}.`
     );
   } else {
@@ -52002,7 +51851,7 @@ function registerChatRoutes(app, deps) {
   app.post("/api/v1/chat", async (request, reply) => {
     if (!deps.groq?.apiKey) {
       return reply.status(501).send({
-        error: "chat assistant not configured -- set GASX_API_GROQ_API_KEY (see .env.example)"
+        error: "chat assistant not configured -- set SILICA_API_GROQ_API_KEY (see .env.example)"
       });
     }
     const messages2 = validateMessages(request.body ?? {});
@@ -52357,7 +52206,7 @@ function resolveHistorySources(deps, opts = {}) {
     r = createHistorySources({
       fetchImpl: opts.fetchImpl ?? ((input, init) => fetch(input, init)),
       chain: deps.chainAdapter,
-      rpcUrl: opts.rpcUrl ?? (process.env.GASX_ETH_RPC_URL || void 0),
+      rpcUrl: opts.rpcUrl ?? (readEnv2("ETH_RPC_URL") || void 0),
       now: opts.now
     });
     resolved.set(deps, r);
@@ -52384,11 +52233,11 @@ function clampDays(raw) {
 function registerIndicesRoutes(app, deps, opts = {}) {
   const env = opts.env ?? process.env;
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  const ethRpcUrl = env.GASX_ETH_RPC_URL || void 0;
-  const getCci = deps.getCci;
+  const ethRpcUrl = readEnv2("ETH_RPC_URL", env) || void 0;
+  const getSci = deps.getSci;
   const sources = resolveHistorySources(deps, { fetchImpl, rpcUrl: ethRpcUrl, now: opts.now });
   app.get("/api/v1/indices/compute", async (_request, reply) => {
-    const body = await getCci();
+    const body = await getSci();
     return reply.header("Cache-Control", CURRENT_CACHE_CONTROL).send(body);
   });
   app.get("/api/v1/indices/compute/history", async (request, reply) => {
@@ -52406,13 +52255,13 @@ function registerIndicesRoutes(app, deps, opts = {}) {
     const secret = (opts.env ?? process.env).CRON_SECRET;
     if (!secret) return reply.status(503).send({ error: "cron snapshot is not configured" });
     if (!bearerMatches(request, secret)) return reply.status(401).send({ error: "unauthorized" });
-    const cci = await getCci();
-    const level = cci.index.level;
+    const sci = await getSci();
+    const level = sci.index.level;
     let recorded = false;
     if (deps.db && level !== null) {
       recorded = await deps.db.recordComputeIndexSnapshot({
         level,
-        components: cci.components,
+        components: sci.components,
         methodologyVersion: METHODOLOGY_VERSION
       });
     }
@@ -52453,15 +52302,15 @@ function registerMarketRoutes(app, deps) {
     let index = null;
     let pillars = [];
     try {
-      const cci = await deps.getCci();
+      const sci = await deps.getSci();
       index = {
-        level: cci.index.level,
-        base: cci.index.base,
-        baseDate: cci.index.baseDate,
-        asOf: cci.index.asOf,
-        degraded: cci.index.degraded
+        level: sci.index.level,
+        base: sci.index.base,
+        baseDate: sci.index.baseDate,
+        asOf: sci.index.asOf,
+        degraded: sci.index.degraded
       };
-      pillars = cci.components.map((c) => ({
+      pillars = sci.components.map((c) => ({
         id: c.id,
         label: c.label,
         level: c.level,
@@ -52771,17 +52620,13 @@ function bearerMatches2(request, secret) {
   return (0, import_node_crypto2.timingSafeEqual)(digest2(header.slice("Bearer ".length)), digest2(secret));
 }
 function defaultSigner(env) {
-  for (const name of ["GASX_NEAR_PUBLISHER_ACCOUNT_ID", "GASX_NEAR_PUBLISHER_PRIVATE_KEY"]) {
-    const value = env[name];
-    if (value !== void 0) process.env[name] = value;
-  }
-  return createSigner("GASX_NEAR_PUBLISHER_ACCOUNT_ID", "GASX_NEAR_PUBLISHER_PRIVATE_KEY");
+  return createSigner(env);
 }
 function liquidityContext(env) {
-  if (env.GASX_DEMO_LIQUIDITY !== "true") return {};
-  const accountId = env.GASX_NEAR_PUBLISHER_ACCOUNT_ID;
+  if (readEnv2("DEMO_LIQUIDITY", env) !== "true") return {};
+  const accountId = readEnv2("NEAR_PUBLISHER_ACCOUNT_ID", env);
   if (!accountId) return {};
-  const qty = Number(env.GASX_DEMO_LIQUIDITY_QUANTITY);
+  const qty = Number(readEnv2("DEMO_LIQUIDITY_QUANTITY", env));
   const quantity = Number.isInteger(qty) && qty > 0 ? qty : 100;
   return {
     signerAccountId: accountId,
@@ -52794,7 +52639,7 @@ function registerTickRoute(app, deps) {
   let lastFinishedAt = null;
   let inFlight = false;
   const sinceLast = () => lastFinishedAt === null ? Infinity : now() - lastFinishedAt;
-  const isConfigured = (env) => !deps.config.devMarket && !!deps.config.contractId && !!env.GASX_NEAR_PUBLISHER_PRIVATE_KEY;
+  const isConfigured = (env) => !deps.config.devMarket && !!deps.config.contractId && !!readEnv2("NEAR_PUBLISHER_PRIVATE_KEY", env);
   const execute = async (env) => {
     inFlight = true;
     try {
@@ -52886,8 +52731,8 @@ function createGatewayDeps(env = process.env) {
   const config2 = loadGatewayConfig();
   const db = createDatabase(config2.databaseUrl, { error: (m) => console.error(m) });
   const chainAdapter = new NearChainAdapter(config2.near);
-  const ethRpcUrl = process.env.GASX_ETH_RPC_URL || void 0;
-  const getCci = createComputeService({
+  const ethRpcUrl = readEnv2("ETH_RPC_URL") || void 0;
+  const getSci = createComputeService({
     fetchImpl: (input, init) => fetch(input, init),
     ...ethRpcUrl ? { ethRpcUrl } : {}
   });
@@ -52903,12 +52748,12 @@ function createGatewayDeps(env = process.env) {
       chainAdapter
     ),
     chainAdapter,
-    getCci,
+    getSci,
     riskPolicy: config2.riskPolicy,
     groq: config2.groq,
     tick: {
       config: config2.near,
-      getPrice: async () => (await getCci()).index.level
+      getPrice: async () => (await getSci()).index.level
     },
     logger: true
   };
