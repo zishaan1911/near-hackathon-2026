@@ -10,8 +10,7 @@ export interface NearAdapterConfig {
   network: string;
   /** NEAR JSON-RPC URL (e.g. https://test.rpc.fastnear.com). */
   rpcUrl: string;
-  /** The Silica contract account (e.g. gasx.testnet; account ids keep the
-   * project's original name). Empty in dev-market mode. */
+  /** The Silica contract account. Empty in dev-market mode. */
   contractId: string;
   /** The NEP-141 collateral token account (tUSDC, 6 decimals). Empty in
    * dev-market mode. */

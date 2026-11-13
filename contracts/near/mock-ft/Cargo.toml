@@ -2,7 +2,7 @@
 name = "mock-ft"
 version = "0.1.0"
 edition = "2021"
-description = "Testnet-only NEP-141 'tUSDC' (6 decimals) with a public faucet, used as GASX collateral"
+description = "Testnet-only NEP-141 'tUSDC' (6 decimals) with a public faucet, used as Silica collateral"
 license = "MIT"
 
 [lib]

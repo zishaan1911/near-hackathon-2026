@@ -34,7 +34,7 @@ export interface MarketSnapshot {
   pillars: PillarSnapshot[];
   market: {
     id: string;
-    /** The on-chain market number, parsed from an id like "gasx.testnet#4". */
+    /** The on-chain market number, parsed from an id like "contract.testnet#4". */
     number: number | null;
     label: string;
     expiryMs?: number;
@@ -159,7 +159,7 @@ function normaliseLevels(value: unknown): Array<{ price: number; size: number }>
   });
 }
 
-/** "gasx.testnet#4" -> 4. Null when the id carries no number. */
+/** "contract.testnet#4" -> 4. Null when the id carries no number. */
 export function marketNumber(id: string | null | undefined): number | null {
   const match = /#(\d+)$/.exec(id ?? '');
   return match ? Number(match[1]) : null;

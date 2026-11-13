@@ -1,4 +1,4 @@
-//! Testnet-only NEP-141 "tUSDC" (6 decimals) used as GASX collateral. There is
+//! Testnet-only NEP-141 "tUSDC" (6 decimals) used as Silica collateral. There is
 //! no official testnet USDC, so this token has a public, capped faucet.
 //! NEVER deploy this to mainnet.
 

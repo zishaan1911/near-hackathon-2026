@@ -3,7 +3,7 @@
 How the pieces fit together, and the rules to keep in mind when changing them.
 
 - **Product:** Silica. The index is the Silica Compute Index (id `SCI`), the market is `SCI-1H` (futures on NEAR, hourly markets, cash-settled in tUSDC).
-- **Contract:** `contracts/near/silica` (Rust, crate `silica`), plus `contracts/near/mock-ft` (test collateral token). Live at `gasx.testnet`; collateral `tusdc.gasx.testnet`; oracle `oracle.gasx.testnet`. **Account ids keep the project's original name**: they are on-chain and cannot be renamed. One current market; `roll_market` is callable by the owner or publisher. ABI in `docs/near-abi.md`.
+- **Contract:** `contracts/near/silica` (Rust, crate `silica`), plus `contracts/near/mock-ft` (test collateral token). Live at `gasx.testnet`; collateral `tusdc.gasx.testnet`; oracle `oracle.gasx.testnet`. One current market; `roll_market` is callable by the owner or publisher. ABI in `docs/near-abi.md`.
 - **Packages** (each has its own `package.json` and lockfile; there is no root workspace):
   - `blockchain/near` is `@silica/near-adapter`: reads the contract over JSON-RPC, prepares (never signs) wallet transactions, and hosts the cron `runTick` (publish, settle, roll, optional demo liquidity, match). Pure helpers live in `pricing.ts`.
   - `server` is `@silica/server` (Fastify): REST API, compute index, risk policy, chat, optional Postgres. It depends on the adapter through `"file:../blockchain/near"`, so the adapter must be built (`dist/`) first.

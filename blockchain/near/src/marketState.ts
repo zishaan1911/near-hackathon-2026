@@ -173,8 +173,7 @@ export async function fetchMarketSummary(config: NearAdapterConfig, marketNumber
   };
 }
 
-/** Fetches and parses both the market and the oracle in parallel. NOT
- * exercised against a live NEAR endpoint from the build sandbox. */
+/** Fetches and parses both the market and the oracle in parallel. */
 export async function fetchMarketState(config: NearAdapterConfig): Promise<MarketState> {
   const [marketView, oracleView] = await Promise.all([
     viewCall<unknown>(config, config.contractId, 'get_market', {}),

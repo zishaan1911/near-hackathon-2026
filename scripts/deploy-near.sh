@@ -7,9 +7,6 @@
 #   PUBLISHER_ID=pub.me.testnet \
 #   DEPLOY_MOCK_TOKEN=true ./scripts/deploy-near.sh
 #
-# (The live testnet deployment's account ids keep the project's original name,
-# e.g. gasx.testnet: account ids are on-chain and cannot be renamed.)
-#
 # Environment:
 #   NEAR_NETWORK        testnet (default) | mainnet
 #   OWNER_ID            account that owns the contract; must already be in the

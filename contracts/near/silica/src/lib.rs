@@ -1,7 +1,6 @@
 //! Silica: hourly futures on the Silica Compute Index, settled on NEAR.
 //!
-//! The ABI is documented in `docs/near-abi.md`. The contract account is
-//! `gasx.testnet`, which keeps the project's original name.
+//! The ABI is documented in `docs/near-abi.md`.
 //!
 //! Model: one contract account holds every trader's collateral (a single
 //! NEP-141 token) in internal `available` / `locked` balances. Traders place

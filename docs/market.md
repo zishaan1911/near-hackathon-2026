@@ -1,6 +1,6 @@
 # Market notes: SCI-1H
 
-The product is **Silica**; the index is the Silica Compute Index (`SCI`, see `compute-index.md`) and the hourly market is `SCI-1H`. NEAR account ids keep the project's original name (e.g. `gasx.testnet`): account ids are on-chain and cannot be renamed.
+The product is **Silica**; the index is the Silica Compute Index (`SCI`, see `compute-index.md`) and the hourly market is `SCI-1H`.
 
 ## Demo liquidity
 
