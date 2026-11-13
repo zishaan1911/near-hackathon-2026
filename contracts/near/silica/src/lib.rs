@@ -1,7 +1,7 @@
-//! GASX: EGSI-1H gas futures exchange on NEAR.
+//! Silica: hourly futures on the Silica Compute Index, settled on NEAR.
 //!
-//! Port of the Sui Move package (`contracts/gasx`, kept in git history under
-//! the `pre-hackathon` tag). The ABI is frozen in `docs/near-abi.md`.
+//! The ABI is documented in `docs/near-abi.md`. The contract account is
+//! `gasx.testnet`, which keeps the project's original name.
 //!
 //! Model: one contract account holds every trader's collateral (a single
 //! NEP-141 token) in internal `available` / `locked` balances. Traders place

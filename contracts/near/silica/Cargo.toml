@@ -1,8 +1,8 @@
 [package]
-name = "gasx"
+name = "silica"
 version = "0.1.0"
 edition = "2021"
-description = "GASX: EGSI-1H gas futures exchange on NEAR"
+description = "Silica: hourly futures on the Silica Compute Index, settled on NEAR"
 license = "MIT"
 
 [lib]

@@ -1,6 +1,4 @@
-//! Pure margin and PnL math. Ported 1:1 from the Move `gasx::risk` module and
-//! `gasx::settlement::claim` so the C++ engine's `move_parity_tests` stay valid.
-//! Holds no state; every function is deterministic.
+//! Pure margin and PnL math. Holds no state; every function is deterministic.
 
 /// Basis-point denominator: a margin ratio of 1000 bps is 10% of notional.
 pub const BPS_DENOMINATOR: u128 = 10_000;
@@ -48,8 +46,7 @@ pub fn compute_pnl(
     (magnitude, !favorable)
 }
 
-/// Payout for one side of a settled trade (Phase-1 capped model, see Move
-/// `settlement.move`): a winner receives their own committed margin plus PnL,
+/// Payout for one side of a settled trade (capped model): a winner receives their own committed margin plus PnL,
 /// capped at the *other* side's committed margin; a loser receives their own
 /// committed margin minus PnL, floored at zero. The two payouts always sum to
 /// the two commitments, so claims can never overdraw.

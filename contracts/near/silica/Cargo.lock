@@ -828,13 +828,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gasx"
-version = "0.1.0"
-dependencies = [
- "near-sdk",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2158,6 +2151,13 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core",
+]
+
+[[package]]
+name = "silica"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
 ]
 
 [[package]]

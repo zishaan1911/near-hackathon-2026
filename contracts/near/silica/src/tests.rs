@@ -17,7 +17,7 @@ fn ctx(predecessor: &str, now_ms: u64) -> VMContextBuilder {
     let mut b = VMContextBuilder::new();
     b.predecessor_account_id(acct(predecessor))
         .signer_account_id(acct(predecessor))
-        .current_account_id(acct("gasx.near"))
+        .current_account_id(acct("silica.near"))
         .block_timestamp(now_ms * 1_000_000);
     b
 }
@@ -34,7 +34,7 @@ fn new_contract() -> Contract {
 /// Contract with a market expiring one hour after T0, plus funded alice and bob.
 fn setup() -> Contract {
     let mut c = new_contract();
-    c.create_market("EGSI-1H".to_string(), T0_MS + HOUR_MS, MULT, 1, 1_000);
+    c.create_market("SCI-1H".to_string(), T0_MS + HOUR_MS, MULT, 1, 1_000);
     deposit(&mut c, "alice.near", 100_000_000);
     deposit(&mut c, "bob.near", 100_000_000);
     c
@@ -130,7 +130,7 @@ fn cannot_order_beyond_balance() {
 #[should_panic(expected = "tick size")]
 fn price_must_respect_tick() {
     let mut c = new_contract();
-    c.create_market("EGSI-1H".to_string(), T0_MS + HOUR_MS, MULT, 5, 1_000);
+    c.create_market("SCI-1H".to_string(), T0_MS + HOUR_MS, MULT, 5, 1_000);
     deposit(&mut c, "alice.near", 100_000_000);
     set("alice.near", T0_MS + 1);
     c.place_order(true, 301, 1);
@@ -333,7 +333,7 @@ fn next_market_after_settlement_keeps_old_claims_working() {
     let t = matched(&mut c);
     settle_at(&mut c, 310);
     set("owner.near", T0_MS + HOUR_MS + 30);
-    let next = c.create_market("EGSI-1H".to_string(), T0_MS + 2 * HOUR_MS, MULT, 1, 1_000);
+    let next = c.create_market("SCI-1H".to_string(), T0_MS + 2 * HOUR_MS, MULT, 1, 1_000);
     assert_eq!(next, 2);
     assert_eq!(c.get_market(Some(1)).unwrap().settlement_price, Some(310));
     set("alice.near", T0_MS + HOUR_MS + 40);
@@ -406,7 +406,7 @@ fn cannot_roll_before_settlement() {
 fn cannot_create_market_before_current_settles() {
     let mut c = setup();
     set("owner.near", T0_MS + 5);
-    c.create_market("EGSI-1H".to_string(), T0_MS + 2 * HOUR_MS, MULT, 1, 1_000);
+    c.create_market("SCI-1H".to_string(), T0_MS + 2 * HOUR_MS, MULT, 1, 1_000);
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn withdraw_debits_and_failed_transfer_refunds() {
 
     // failed ft_transfer -> callback restores the balance
     testing_env!(
-        ctx("gasx.near", T0_MS + 2).build(),
+        ctx("silica.near", T0_MS + 2).build(),
         test_vm_config(),
         RuntimeFeesConfig::test(),
         Default::default(),
@@ -458,7 +458,7 @@ fn successful_transfer_keeps_the_debit() {
     let _ = c.withdraw(U128(40_000_000));
 
     testing_env!(
-        ctx("gasx.near", T0_MS + 2).build(),
+        ctx("silica.near", T0_MS + 2).build(),
         test_vm_config(),
         RuntimeFeesConfig::test(),
         Default::default(),
