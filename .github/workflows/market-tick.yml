@@ -1,0 +1,25 @@
+name: Market tick
+
+# Keeps the hourly SCI-1H market moving when nobody has the site open:
+# publishes the index, settles the expired market and opens the next one.
+# Uses the public, rate-limited poke endpoint, so no secrets are needed.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: market-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Poke the market
+        run: |
+          curl -sS --fail-with-body --max-time 60 -X POST https://silicaindex.vercel.app/api/v1/market/poke
+          echo
